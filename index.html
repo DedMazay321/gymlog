@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="ru" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#111417">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>GymLog — дневник тренировок</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<main id="app"></main>
+
+<div id="rest" hidden>
+  <div class="rest-bar"><i id="rest-fill"></i></div>
+  <div class="rest-row">
+    <b id="rest-time"></b>
+    <button data-a="restAdd" data-v="-15">−15</button>
+    <button data-a="restAdd" data-v="15">+15</button>
+    <button data-a="restStop">Пропустить</button>
+  </div>
+</div>
+
+<nav id="tabs">
+  <a href="#/workouts" data-tab="workouts">
+    <svg viewBox="0 0 24 24"><path d="M3 10v4M6 7v10M18 7v10M21 10v4M6 12h12"/></svg>Тренировки</a>
+  <a href="#/programs" data-tab="programs">
+    <svg viewBox="0 0 24 24"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/></svg>Программы</a>
+  <a href="#/exercises" data-tab="exercises">
+    <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/></svg>Упражнения</a>
+  <a href="#/measures" data-tab="measures">
+    <svg viewBox="0 0 24 24"><path d="M4 19V5M4 19h16M8 15l3-4 3 2 4-6"/></svg>Замеры</a>
+  <a href="#/more" data-tab="more">
+    <svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/></svg>Ещё</a>
+</nav>
+
+<div id="modal" hidden></div>
+<div id="toast" hidden></div>
+<input type="file" id="imp" accept=".json,application/json" hidden>
+<input type="file" id="photoInp" accept="image/*" hidden>
+
+<script src="exercises.js"></script>
+<script src="body.js"></script>
+<script src="tech.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

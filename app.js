@@ -1,0 +1,1349 @@
+'use strict';
+
+/* ---------- утилиты ---------- */
+const KEY = 'gymlog.v1';
+const $ = (s, r = document) => r.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+const num = s => { const v = parseFloat(String(s ?? '').replace(',', '.')); return isFinite(v) ? v : null; };
+const n = v => v == null ? '' : String(+(+v).toFixed(2)).replace('.', ',');
+const pad = v => String(v).padStart(2, '0');
+const isoDay = ts => { const d = new Date(ts); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
+const move = (arr, i, d) => { const j = i + d; if (j < 0 || j >= arr.length) return; [arr[i], arr[j]] = [arr[j], arr[i]]; };
+
+function fmtDate(ts) {
+  const d = new Date(ts), o = { day: 'numeric', month: 'short', weekday: 'short' };
+  if (d.getFullYear() !== new Date().getFullYear()) o.year = 'numeric';
+  return d.toLocaleDateString('ru-RU', o);
+}
+function fmtDur(ms) {
+  const s = Math.max(0, Math.floor(ms / 1000)), h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60);
+  return h ? `${h}:${pad(m)}:${pad(s % 60)}` : `${m}:${pad(s % 60)}`;
+}
+
+const KINDS = {
+  wr: { a: 'кг', b: 'повт', name: 'Вес × повторы' },
+  time: { a: 'кг', b: 'сек', name: 'Время (сек)' },
+  cardio: { a: 'км', b: 'мин', name: 'Кардио (км / мин)' },
+};
+const MEASURES = [
+  ['weight', 'Вес', 'кг'], ['fat', 'Жир', '%'], ['neck', 'Шея', 'см'], ['shoulders', 'Плечи', 'см'],
+  ['chest', 'Грудь', 'см'], ['waist', 'Талия', 'см'], ['hips', 'Бёдра', 'см'], ['biceps', 'Бицепс', 'см'],
+  ['forearm', 'Предплечье', 'см'], ['thigh', 'Бедро', 'см'], ['calf', 'Голень', 'см'],
+];
+
+/* ---------- данные ---------- */
+function fresh() {
+  return {
+    version: 1,
+    exercises: BASE_EXERCISES.map(([name, muscle, equip, kind], i) => ({ id: 'e' + i, name, muscle, equip, kind: kind || 'wr' })),
+    programs: [], workouts: [], measures: [],
+    settings: { rest: 90, sound: true, vibro: true, theme: 'dark', updUrl: '', updAuto: true },
+  };
+}
+function load() {
+  try {
+    const d = JSON.parse(localStorage.getItem(KEY));
+    if (d && d.version) {
+      // новые упражнения базового справочника добавляем в уже существующие данные
+      const have = new Set(d.exercises.map(e => e.id));
+      fresh().exercises.forEach(e => { if (!have.has(e.id)) d.exercises.push(e); });
+      return d;
+    }
+  } catch (e) { /* повреждённые данные — начинаем заново */ }
+  return fresh();
+}
+let db = load();
+function save() {
+  try { localStorage.setItem(KEY, JSON.stringify(db)); }
+  catch (e) { toast('Не удалось сохранить данные: ' + e.message); }
+}
+
+const exById = id => db.exercises.find(e => e.id === id) || { id, name: 'Удалённое упражнение', muscle: '', equip: '', kind: 'wr' };
+const W = id => db.workouts.find(w => w.id === id);
+const P = id => db.programs.find(p => p.id === id);
+const sortedW = () => [...db.workouts].sort((a, b) => b.start - a.start);
+const activeW = () => db.workouts.find(w => !w.end);
+const kindOf = exId => KINDS[exById(exId).kind] || KINDS.wr;
+
+function setTxt(s, kind) {
+  if (kind === 'cardio') return [s.w != null ? n(s.w) + ' км' : '', s.r != null ? n(s.r) + ' мин' : ''].filter(Boolean).join(' / ');
+  if (kind === 'time') return (s.w ? n(s.w) + ' кг × ' : '') + n(s.r) + ' с';
+  return s.w ? `${n(s.w)}×${n(s.r)}` : n(s.r);
+}
+function prevSets(exId, exceptId, before) {
+  for (const w of sortedW()) {
+    if (w.id === exceptId || w.start >= before) continue;
+    const sets = w.items.filter(it => it.exId === exId).flatMap(it => it.sets.filter(s => s.done));
+    if (sets.length) return sets;
+  }
+  return [];
+}
+// Типы подходов: без метки — рабочий, w — разминочный, f — до отказа, d — дроп-сет.
+const SET_TYPES = { '': ['Рабочий', ''], w: ['Разминочный', 'Р'], f: ['До отказа', 'О'], d: ['Дроп-сет', 'Д'] };
+// Разминочные подходы не идут в статистику, рекорды и подсказки.
+const isWork = s => s.done && s.t !== 'w';
+function wStats(w) {
+  let sets = 0, ton = 0;
+  for (const it of w.items) {
+    const wr = exById(it.exId).kind === 'wr';
+    for (const s of it.sets) if (isWork(s)) { sets++; if (wr) ton += (s.w || 0) * (s.r || 0); }
+  }
+  return { sets, ton, ex: w.items.length };
+}
+// Лучший вес в упражнении до указанного момента — чтобы отмечать рекорды.
+function bestBefore(exId, before) {
+  let best = 0;
+  for (const w of db.workouts) {
+    if (w.start >= before) continue;
+    for (const it of w.items) if (it.exId === exId) for (const s of it.sets) if (isWork(s) && (s.w || 0) > best) best = s.w;
+  }
+  return best;
+}
+// Подсказка на сегодня: если в прошлый раз все рабочие подходы выполнены в плане — прибавляем.
+function suggest(it, prev) {
+  const ex = exById(it.exId), work = prev.filter(s => s.t !== 'w');
+  if (ex.kind !== 'wr' || !work.length) return null;
+  const target = it.planR || work[0].r || 0;
+  const ok = work.every(s => (s.r || 0) >= target), top = Math.max(...work.map(s => s.w || 0));
+  if (!top) return ok ? { dr: 1, text: `Сегодня попробуйте ${target + 1} повт. — в прошлый раз план выполнен` } : { text: `Сегодня цель — ${target} повт. во всех подходах` };
+  const step = ex.equip === 'Гантели' || ex.equip === 'Гиря' ? 1 : 2.5;
+  return ok ? { dw: step, text: `Сегодня: ${n(top + step)} кг — в прошлый раз план выполнен, прибавьте ${n(step)} кг` }
+    : { text: `Сегодня: ${n(top)} кг — сначала доберите ${target} повт. во всех подходах` };
+}
+
+// Изменение показателя относительно прошлого результата: ▲ рост, ▼ падение, = без изменений.
+function dl(d, unit = '') {
+  d = +(+d).toFixed(2);
+  const u = unit ? ' ' + unit : '';
+  return d > 0 ? `<span class="up">▲ +${n(d)}${u}</span>` : d < 0 ? `<span class="down">▼ −${n(-d)}${u}</span>` : `<span class="muted">=${u}</span>`;
+}
+
+/* ---------- фото упражнений (есть только у базового справочника) ---------- */
+function exFrames(id) {
+  const m = /^e(\d+)$/.exec(id);
+  if (!m || +m[1] >= BASE_EXERCISES.length) return [];
+  return id === 'e58' ? [`img/${id}_0.jpg`] : [`img/${id}_0.jpg`, `img/${id}_1.jpg`];
+}
+function demo(id) {
+  const f = exFrames(id);
+  return f.length ? `<div class="demo">${f.map((s, i) => `<img src="${s}" alt="" ${i ? 'class="f2"' : ''}>`).join('')}</div>
+    ${f.length > 1 ? `<div class="muted small demo-cap">Начальная и конечная фаза движения</div>` : ''}` : '';
+}
+function thumb(id, action) {
+  const f = exFrames(id);
+  return f.length ? `<img class="thumb" src="${f[0]}" loading="lazy" alt="" ${action ? `data-a="demo" data-id="${id}"` : ''}>` : '';
+}
+
+/* ---------- схема работающих мышц ---------- */
+const MUSCLE_RU = {
+  abdominals: 'пресс', abductors: 'отводящие бедра', adductors: 'приводящие бедра', biceps: 'бицепс', calves: 'икры',
+  chest: 'грудь', forearms: 'предплечья', glutes: 'ягодицы', hamstrings: 'бицепс бедра', lats: 'широчайшие',
+  'lower back': 'поясница', 'middle back': 'середина спины', neck: 'шея', quadriceps: 'квадрицепс',
+  shoulders: 'плечи', traps: 'трапеции', triceps: 'трицепс',
+};
+// мышца -> части схемы тела (BODY)
+const MUSCLE_PARTS = {
+  abdominals: ['abs', 'obliques'], abductors: ['abductors'], adductors: ['adductor'], biceps: ['biceps'],
+  calves: ['calves', 'left-soleus', 'right-soleus'], chest: ['chest'], forearms: ['forearm'], glutes: ['gluteal'],
+  hamstrings: ['hamstring'], lats: ['upper-back'], 'lower back': ['lower-back'], 'middle back': ['upper-back', 'trapezius'],
+  neck: ['neck'], quadriceps: ['quadriceps'], shoulders: ['front-deltoids', 'back-deltoids'], traps: ['trapezius'], triceps: ['triceps'],
+};
+// для своих упражнений точных данных нет — показываем группу мышц целиком
+const GROUP_MUSCLE = {
+  'Грудь': 'chest', 'Спина': 'lats', 'Ноги': 'quadriceps', 'Плечи': 'shoulders', 'Бицепс': 'biceps',
+  'Трицепс': 'triceps', 'Пресс': 'abdominals', 'Предплечья': 'forearms',
+};
+function exMuscles(ex) {
+  const m = /^e(\d+)$/.exec(ex.id);
+  if (m && EX_MUSCLES[+m[1]]) return EX_MUSCLES[+m[1]];
+  return [GROUP_MUSCLE[ex.muscle] ? [GROUP_MUSCLE[ex.muscle]] : [], []];
+}
+const muscleMap = ex => mapHtml(...exMuscles(ex));
+// Мышцы тренировочного дня: основные мышцы всех упражнений (кардио не учитываем) и вспомогательные сверх них.
+function dayMuscles(items) {
+  const pri = new Set(), sec = new Set();
+  items.forEach(it => {
+    const ex = exById(it.exId);
+    if (ex.kind === 'cardio') return;
+    const [p, s] = exMuscles(ex);
+    p.forEach(m => pri.add(m)); s.forEach(m => sec.add(m));
+  });
+  return [[...pri], [...sec].filter(m => !pri.has(m))];
+}
+const muscleNames = list => list.map(m => MUSCLE_RU[m]).join(', ');
+// mini — только силуэты, без подписей (для списков)
+function mapHtml(pri, sec, mini) {
+  if (!pri.length) return '';
+  const cls = {};
+  sec.forEach(m => MUSCLE_PARTS[m].forEach(p => cls[p] = 's'));
+  pri.forEach(m => MUSCLE_PARTS[m].forEach(p => cls[p] = 'p'));
+  const fig = (side, label) => `<svg viewBox="${side.box}" role="img" aria-label="${label}">${side.parts.map(([name, ...polys]) =>
+    polys.map(pts => `<polygon class="${cls[name] || ''}" points="${pts}"/>`).join('')).join('')}</svg>`;
+  const figs = `<div class="mm-figs">${fig(BODY.front, 'Вид спереди')}${fig(BODY.back, 'Вид сзади')}</div>`;
+  if (mini) return `<div class="mm mini">${figs}</div>`;
+  return `<div class="mm">${figs}
+    <div class="mm-leg"><div><i class="p"></i><span><b>Основные</b><br>${muscleNames(pri)}</span></div>
+    ${sec.length ? `<div><i class="s"></i><span><b>Вспомогательные</b><br>${muscleNames(sec)}</span></div>` : ''}</div></div>`;
+}
+
+/* ---------- шторки, формы, уведомления ---------- */
+const modal = $('#modal');
+let sheetDone = null, picker = false;
+function sheet(html) {
+  return new Promise(res => {
+    if (sheetDone) sheetDone(null);
+    sheetDone = res;
+    modal.innerHTML = `<div class="backdrop" data-a="sheetClose"></div><div class="sheet">${html}</div>`;
+    modal.hidden = false;
+  });
+}
+function closeSheet(v = null) {
+  modal.hidden = true; modal.innerHTML = '';
+  const d = sheetDone; sheetDone = null; picker = false;
+  if (d) d(v);
+}
+function menu(title, opts) {
+  return sheet(`<h3>${esc(title)}</h3>` + opts.filter(Boolean).map(([v, label, danger]) =>
+    `<button class="li ${danger ? 'danger' : ''}" data-a="sheetRes" data-v="${v}">${esc(label)}</button>`).join(''));
+}
+function confirmDlg(text, ok = 'Удалить') {
+  return sheet(`<h3>${esc(text)}</h3><div class="row end">
+    <button class="btn ghost" data-a="sheetClose">Отмена</button>
+    <button class="btn danger" data-a="sheetRes" data-v="1">${esc(ok)}</button></div>`).then(Boolean);
+}
+// Возвращает объект значений, строку (если нажата доп. кнопка) или null при отмене.
+function form(title, fields, extra = '') {
+  const p = sheet(`<h3>${esc(title)}</h3><form id="f">${fields.map(f => `<label class="field"><span>${esc(f.label)}</span>${
+    f.type === 'select'
+      ? `<select name="${f.name}">${f.options.map(([v, l]) => `<option value="${esc(v)}" ${v === f.value ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>`
+      : f.type === 'textarea'
+        ? `<textarea name="${f.name}" rows="3">${esc(f.value)}</textarea>`
+        : `<input name="${f.name}" type="${f.type === 'date' ? 'date' : 'text'}" ${f.type === 'number' ? 'inputmode="decimal"' : ''} value="${esc(f.value)}" placeholder="${esc(f.placeholder)}" autocomplete="off">`
+  }</label>`).join('')}
+    <div class="row end">${extra}<button type="button" class="btn ghost" data-a="sheetClose">Отмена</button>
+    <button class="btn primary">Сохранить</button></div></form>`);
+  const f = $('#f');
+  f.onsubmit = e => {
+    e.preventDefault();
+    const o = {};
+    fields.forEach(fl => o[fl.name] = f.elements[fl.name].value.trim());
+    closeSheet(o);
+  };
+  const first = f.querySelector('input[type=text]');
+  if (first && !first.value) first.focus();
+  return p;
+}
+let toastT;
+function toast(text) {
+  const el = $('#toast');
+  el.textContent = text; el.hidden = false;
+  clearTimeout(toastT); toastT = setTimeout(() => el.hidden = true, 2500);
+}
+
+/* ---------- таймер отдыха ---------- */
+let rest = null;
+try { rest = JSON.parse(localStorage.getItem(KEY + '.rest')); } catch (e) { /* нет сохранённого таймера */ }
+let audio;
+function audioInit() {
+  try { audio = audio || new (window.AudioContext || window.webkitAudioContext)(); audio.resume(); } catch (e) { /* звук недоступен */ }
+}
+function beep() {
+  if (!audio || !db.settings.sound) return;
+  [0, .25, .5].forEach(t => {
+    const o = audio.createOscillator(), g = audio.createGain();
+    o.frequency.value = 880; o.connect(g); g.connect(audio.destination);
+    g.gain.setValueAtTime(.25, audio.currentTime + t);
+    g.gain.exponentialRampToValueAtTime(.001, audio.currentTime + t + .18);
+    o.start(audio.currentTime + t); o.stop(audio.currentTime + t + .2);
+  });
+}
+function saveRest() { rest ? localStorage.setItem(KEY + '.rest', JSON.stringify(rest)) : localStorage.removeItem(KEY + '.rest'); }
+function startRest(sec) {
+  if (!sec) return;
+  rest = { end: Date.now() + sec * 1000, total: sec };
+  saveRest(); audioInit(); drawRest();
+}
+function stopRest() { rest = null; saveRest(); drawRest(); }
+function drawRest() {
+  const el = $('#rest');
+  if (!rest) { el.hidden = true; return; }
+  const left = Math.ceil((rest.end - Date.now()) / 1000);
+  if (left < -5) return stopRest();
+  if (left <= 0 && !rest.fired) {
+    rest.fired = true; saveRest(); beep();
+    if (db.settings.vibro && navigator.vibrate) navigator.vibrate([300, 150, 300]);
+  }
+  el.hidden = false;
+  $('#rest-time').textContent = left > 0 ? 'Отдых ' + fmtDur(left * 1000) : 'Отдых окончен';
+  $('#rest-fill').style.width = Math.max(0, Math.min(100, 100 - left / rest.total * 100)) + '%';
+}
+setInterval(() => {
+  drawRest();
+  document.querySelectorAll('[data-elapsed]').forEach(el => el.textContent = fmtDur(Date.now() - +el.dataset.elapsed));
+}, 1000);
+
+/* ---------- график (одна серия: линия + перекрестие) ---------- */
+const charts = {};
+function chart(id, pts, unit) {
+  if (!pts.length) return `<div class="empty small">Пока нет данных</div>`;
+  if (pts.length < 2) return `<div class="empty small">${fmtDate(pts[0].t)} — ${n(pts[0].v)} ${unit}<br>График появится после второй записи</div>`;
+  const Wd = 340, H = 170, L = 36, R = 10, T = 10, B = 22;
+  let lo = Math.min(...pts.map(p => p.v)), hi = Math.max(...pts.map(p => p.v));
+  if (lo === hi) { lo -= 1; hi += 1; }
+  const gap = (hi - lo) * .12; hi += gap; lo = Math.max(0, lo - gap);
+  const t0 = pts[0].t, t1 = pts[pts.length - 1].t;
+  const X = (t, i) => L + (t1 > t0 ? (t - t0) / (t1 - t0) : i / (pts.length - 1)) * (Wd - L - R);
+  const Y = v => T + (hi - v) / (hi - lo) * (H - T - B);
+  const xy = pts.map((p, i) => ({ x: X(p.t, i), y: Y(p.v), l: `${fmtDate(p.t)} — <b>${n(p.v)} ${unit}</b>` }));
+  charts[id] = { xy, Wd };
+  const line = xy.map((p, i) => `${i ? 'L' : 'M'}${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join('');
+  const base = H - B, last = xy[xy.length - 1];
+  const grid = [0, 1, 2, 3].map(k => {
+    const v = lo + (hi - lo) * k / 3, y = Y(v);
+    return `<line class="grid" x1="${L}" x2="${Wd - R}" y1="${y}" y2="${y}"/><text class="ax" x="${L - 5}" y="${y + 3}" text-anchor="end">${n(+v.toFixed(1))}</text>`;
+  }).join('');
+  const short = t => new Date(t).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: '2-digit' });
+  return `<div class="chart" data-chart="${id}">
+    <div class="chart-cap">${last.l}</div>
+    <svg viewBox="0 0 ${Wd} ${H}" role="img" aria-label="График">
+      ${grid}
+      <text class="ax" x="${L}" y="${H - 5}">${short(t0)}</text>
+      <text class="ax" x="${Wd - R}" y="${H - 5}" text-anchor="end">${short(t1)}</text>
+      <path class="area" d="${line}L${last.x.toFixed(1)} ${base}L${xy[0].x.toFixed(1)} ${base}Z"/>
+      <path class="ln" d="${line}"/>
+      ${xy.length <= 30 ? xy.map(p => `<circle class="dot" cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="4"/>`).join('') : ''}
+      <line class="cross" x1="${last.x}" x2="${last.x}" y1="${T}" y2="${base}"/>
+      <circle class="hl" cx="${last.x}" cy="${last.y}" r="5"/>
+    </svg></div>`;
+}
+function chartHover(e) {
+  const box = e.target.closest && e.target.closest('.chart');
+  const c = box && charts[box.dataset.chart];
+  if (!c) return;
+  const svg = $('svg', box), r = svg.getBoundingClientRect();
+  const x = (e.clientX - r.left) / r.width * c.Wd;
+  const p = c.xy.reduce((a, b) => Math.abs(b.x - x) < Math.abs(a.x - x) ? b : a);
+  const cross = $('.cross', svg), hl = $('.hl', svg);
+  cross.setAttribute('x1', p.x); cross.setAttribute('x2', p.x);
+  hl.setAttribute('cx', p.x); hl.setAttribute('cy', p.y);
+  $('.chart-cap', box).innerHTML = p.l;
+}
+document.addEventListener('pointermove', chartHover);
+document.addEventListener('pointerdown', chartHover);
+
+/* ---------- экран: тренировки ---------- */
+let cal = new Date(); cal.setDate(1);
+function calendar() {
+  const y = cal.getFullYear(), m = cal.getMonth(), now = new Date();
+  const off = (new Date(y, m, 1).getDay() + 6) % 7, days = new Date(y, m + 1, 0).getDate(), map = {};
+  db.workouts.forEach(w => { const d = new Date(w.start); if (d.getFullYear() === y && d.getMonth() === m) map[d.getDate()] = map[d.getDate()] || w.id; });
+  let cells = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'].map(d => `<div class="wd">${d}</div>`).join('') + '<div></div>'.repeat(off);
+  for (let d = 1; d <= days; d++) {
+    const today = y === now.getFullYear() && m === now.getMonth() && d === now.getDate() ? ' today' : '';
+    cells += map[d] ? `<a class="d has${today}" href="#/workout/${map[d]}">${d}</a>` : `<div class="d${today}">${d}</div>`;
+  }
+  return `<section class="card"><div class="cal-head">
+    <button class="ic sm" data-a="calNav" data-v="-1">‹</button>
+    <b>${cal.toLocaleDateString('ru-RU', { month: 'long' })} ${y}</b>
+    <button class="ic sm" data-a="calNav" data-v="1">›</button></div>
+    <div class="cal">${cells}</div></section>`;
+}
+function pgWorkouts() {
+  const act = activeW(), list = sortedW().filter(w => w.end), now = new Date();
+  const weekStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - (now.getDay() + 6) % 7).getTime();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+  return `<header class="top"><h1>Тренировки</h1></header>
+  ${act ? `<a class="card link active" href="#/workout/${act.id}"><b>Идёт тренировка: ${esc(act.name)}</b>
+      <div class="muted small">Прошло <span data-elapsed="${act.start}">${fmtDur(Date.now() - act.start)}</span> · нажмите, чтобы продолжить</div></a>`
+    : `<button class="btn block primary" data-a="startSheet">Начать тренировку</button>`}
+  <div class="tiles">
+    <div class="tile"><b>${list.filter(w => w.start >= weekStart).length}</b><span>за неделю</span></div>
+    <div class="tile"><b>${list.filter(w => w.start >= monthStart).length}</b><span>за месяц</span></div>
+    <div class="tile"><b>${list.length}</b><span>всего</span></div>
+  </div>
+  <div class="row two"><a class="btn" href="#/stats">📊 Сводка</a><a class="btn" href="#/awards">🏆 Достижения</a></div>
+  ${calendar()}
+  <h2>История</h2>
+  ${list.length ? list.map(w => {
+    const s = wStats(w);
+    return `<a class="card link" href="#/workout/${w.id}"><div class="ex-head"><b>${esc(w.name)}</b><span class="muted small">${fmtDate(w.start)}</span></div>
+      <div class="muted small">${fmtDur(w.end - w.start)} · ${s.ex} упр. · ${s.sets} подх.${s.ton ? ` · ${n(Math.round(s.ton))} кг` : ''}</div>
+      <div class="small" style="margin-top:6px">${w.items.map(it => esc(exById(it.exId).name)).join(', ')}</div></a>`;
+  }).join('') : `<div class="empty">Завершённых тренировок пока нет.<br>Начните первую — она появится здесь.</div>`}`;
+}
+
+/* ---------- экран: тренировка ---------- */
+function itemCard(w, it, i) {
+  const ex = exById(it.exId), k = KINDS[ex.kind] || KINDS.wr, prev = prevSets(it.exId, w.id, w.start);
+  const d = `data-w="${w.id}" data-x="${i}"`;
+  const sg = w.end ? null : suggest(it, prev), best = ex.kind === 'wr' ? bestBefore(ex.id, w.start) : 0;
+  const linked = i > 0 && w.items[i - 1].ss;   // продолжение суперсета
+  let num = 0;
+  return `<section class="card ${it.ss ? 'ss-top' : ''} ${linked ? 'ss-bottom' : ''}">
+    ${it.ss && !linked ? `<div class="ss-tag">Суперсет — упражнения подряд, отдых после последнего</div>` : ''}
+    <div class="ex-head">${thumb(ex.id, true)}<a href="#/exercise/${ex.id}">${esc(ex.name)}</a><button class="ic sm" data-a="itMenu" ${d}>⋮</button></div>
+    <div class="muted small">${prev.length ? 'Прошлый раз: ' + prev.map(s => setTxt(s, ex.kind)).join(' · ') : 'Раньше не выполнялось'}</div>
+    ${sg ? `<div class="hint">${sg.text}</div>` : ''}
+    ${it.note ? `<div class="small" style="margin-top:4px">📝 ${esc(it.note)}</div>` : ''}
+    ${it.sets.length ? `<div class="set-row head"><span>#</span><span>${k.a}</span><span>${k.b}</span><span></span></div>` : ''}
+    ${it.sets.map((s, j) => {
+      const p = prev[j] || prev[prev.length - 1] || {}, warm = s.t === 'w';
+      // подсказка в пустом поле: прошлый результат, для рабочих подходов — с рекомендованной прибавкой
+      const up = sg && !warm && p.t !== 'w';
+      const pw = up && sg.dw && p.w != null ? p.w + sg.dw : p.w;
+      const pr = up && sg.dr && p.r != null ? p.r + sg.dr : (up && sg.dw && it.planR) || p.r;
+      return `<div class="set-row ${s.done ? 'done' : ''}">
+        <button class="num t-${s.t || 'n'}" data-a="setType" ${d} data-s="${j}" aria-label="Тип подхода">${s.t ? SET_TYPES[s.t][1] : ++num}</button>
+        <input type="text" inputmode="decimal" data-in="setVal" data-f="w" ${d} data-s="${j}" value="${s.w ?? ''}" placeholder="${pw ?? ''}">
+        <input type="text" inputmode="decimal" data-in="setVal" data-f="r" ${d} data-s="${j}" value="${s.r ?? ''}" placeholder="${pr ?? it.planR ?? ''}">
+        <button class="chk" data-a="setToggle" ${d} data-s="${j}" aria-label="Подход выполнен">✓</button>
+        ${s.done && (prev[j] || (best && isWork(s) && s.w > best)) ? `<div class="delta">
+          ${best && isWork(s) && s.w > best ? `<span class="up">🏆 рекорд</span>` : ''}
+          ${prev[j] ? `${s.w || prev[j].w ? dl((s.w || 0) - (prev[j].w || 0), k.a) : ''} ${dl((s.r || 0) - (prev[j].r || 0), k.b)}` : ''}</div>` : ''}</div>`;
+    }).join('')}
+    <div class="row"><button class="btn sm" data-a="setAdd" ${d}>+ Подход</button>
+      ${it.sets.length ? `<button class="btn sm ghost" data-a="setDel" ${d}>− Подход</button>` : ''}</div>
+  </section>`;
+}
+function pgWorkout(id) {
+  const w = W(id);
+  if (!w) return notFound();
+  const s = wStats(w);
+  return `<header class="top"><a class="ic" href="#/workouts">‹</a><h1 data-a="wRename" data-w="${w.id}">${esc(w.name)}</h1>
+    <button class="ic" data-a="wMenu" data-w="${w.id}">⋮</button></header>
+  <div class="sub">${fmtDate(w.start)} · <span ${w.end ? '' : `data-elapsed="${w.start}"`}>${fmtDur((w.end || Date.now()) - w.start)}</span>
+    · ${s.sets} подх.${s.ton ? ` · ${n(Math.round(s.ton))} кг` : ''}</div>
+  ${w.note ? `<div class="note">${esc(w.note)}</div>` : ''}
+  ${w.items.map((it, i) => itemCard(w, it, i)).join('') || `<div class="empty">Добавьте первое упражнение</div>`}
+  <button class="btn block" data-a="wAddEx" data-w="${w.id}">+ Добавить упражнение</button>
+  ${w.end ? `<button class="btn block ghost" data-a="wRepeat" data-w="${w.id}">Повторить эту тренировку</button>`
+    : `<button class="btn block primary" data-a="wFinish" data-w="${w.id}">Завершить тренировку</button>`}`;
+}
+
+/* ---------- экран: программы ---------- */
+function pgPrograms() {
+  return `<header class="top"><h1>Программы</h1></header>
+  ${db.programs.map(p => `<a class="card link" href="#/program/${p.id}"><b>${esc(p.name)}</b>
+    <div class="muted small">${p.days.length} дн.${p.days.length ? ' · ' + p.days.map(d => esc(d.name)).join(', ') : ''}</div></a>`).join('')
+    || `<div class="empty">Программ пока нет.<br>Создайте свою или возьмите готовую.</div>`}
+  <button class="btn block primary" data-a="wizOpen">Подобрать программу под цель</button>
+  <button class="btn block" data-a="pAdd">+ Своя программа с нуля</button>
+  <button class="btn block ghost" data-a="pTemplates">Классические программы</button>`;
+}
+// Подбор программы: пол, цель, число дней, уровень — и предпросмотр того, что получится.
+const wiz = { sex: 'm', goal: 'mass', place: 'gym', days: 3, split: 'auto', level: 'new' };
+function wizHtml() {
+  const p = buildProgram(wiz), g = GOALS[wiz.goal];
+  const group = (key, title) => `<div class="muted small" style="margin:4px 2px 6px">${title}</div><div class="chips" style="flex-wrap:wrap">${
+    WIZ[key].map(([v, l]) => `<button class="chip ${wiz[key] === v ? 'on' : ''}" data-a="wizSet" data-k="${key}" data-v="${v}"
+      ${key === 'split' && !splitOk(v, wiz.days, wiz.place) ? 'disabled' : ''}>${l}</button>`).join('')}</div>`;
+  return `<h3>Подбор программы</h3>
+    ${group('sex', 'Для кого')}${group('goal', 'Цель')}${group('place', 'Где тренируетесь')}${group('days', 'Тренировок в неделю')}
+    ${group('split', 'Схема тренировок')}
+    <div class="muted small" style="margin:-4px 2px 10px">${wiz.split === 'auto' ? 'Авто — схема подбирается под число дней.'
+      : 'Фулбоди доступен до 4 дней в неделю, «жим / тяга / ноги» — от 3 дней и только в зале.'}</div>
+    ${group('level', 'Уровень')}
+    <div class="note">${esc(g.tip)}</div>
+    ${p.days.map(d => `<div class="li day-row">${mapHtml(...dayMuscles(d.items), true)}<div><b>${esc(d.name)}</b>
+      <div class="small">${muscleNames(dayMuscles(d.items)[0])}</div>
+      <div class="muted small">${d.items.map(it => `${esc(exById(it.exId).name)} ${it.sets}×${it.reps}`).join(' · ')}</div></div></div>`).join('')}
+    <div class="row end" style="margin-top:14px"><button class="btn ghost" data-a="sheetClose">Отмена</button>
+      <button class="btn primary" data-a="wizCreate">Создать программу</button></div>`;
+}
+// Оценка длительности дня в минутах: ~40 секунд на подход плюс отдых, минута на смену упражнения.
+function dayStats(d) {
+  let sets = 0, sec = 0;
+  d.items.forEach(it => {
+    const kind = exById(it.exId).kind, rest = it.rest || db.settings.rest || 0;
+    sets += it.sets;
+    sec += 60 + (kind === 'cardio' ? it.sets * it.reps * 60 : it.sets * ((kind === 'time' ? it.reps : 40) + rest));
+  });
+  return { sets, min: Math.max(5, Math.round(sec / 300) * 5) };
+}
+function itemPlan(it) {
+  const ex = exById(it.exId), k = KINDS[ex.kind] || KINDS.wr;
+  if (ex.kind === 'cardio') return `${it.reps} мин`;
+  return `${it.sets} × ${it.reps}${ex.kind === 'time' ? ' ' + k.b : ''}`;
+}
+function pgProgram(id, day) {
+  const p = P(id);
+  if (!p) return notFound();
+  if (day != null && p.days[+day]) return pgDay(p, +day);
+  // подходов в неделю по основным мышцам — видно, на что программа делает упор
+  const load = {};
+  p.days.forEach(d => d.items.forEach(it => {
+    const ex = exById(it.exId);
+    if (ex.kind !== 'cardio') exMuscles(ex)[0].forEach(m => load[m] = (load[m] || 0) + it.sets);
+  }));
+  const loads = Object.entries(load).sort((a, b) => b[1] - a[1]), top = loads.length ? loads[0][1] : 1;
+  const stats = p.days.map(dayStats);
+  const avg = stats.length ? Math.round(stats.reduce((a, s) => a + s.min, 0) / stats.length / 5) * 5 : 0;
+  return `<header class="top"><a class="ic" href="#/programs">‹</a><h1 data-a="pRename" data-p="${p.id}">${esc(p.name)}</h1>
+    <button class="ic" data-a="pMenu" data-p="${p.id}">⋮</button></header>
+  ${p.note ? `<div class="note">${esc(p.note)}</div>` : ''}
+  ${p.days.length ? `<div class="tiles">
+    <div class="tile"><b>${p.days.length}</b><span>дней в неделю</span></div>
+    <div class="tile"><b>${stats.reduce((a, s) => a + s.sets, 0)}</b><span>подходов в неделю</span></div>
+    <div class="tile"><b>≈ ${avg}</b><span>минут на тренировку</span></div>
+  </div>` : ''}
+  ${p.days.map((d, di) => {
+    const [pri, sec] = dayMuscles(d.items);
+    return `<section class="card">
+    <div class="ex-head"><b>${esc(d.name)}</b><button class="ic sm" data-a="dMenu" data-p="${p.id}" data-d="${di}">⋮</button></div>
+    <a class="day-row" href="#/program/${p.id}/${di}">${mapHtml(pri, sec, true)}<div>
+      ${pri.length ? `<div class="small"><b>${muscleNames(pri)}</b></div>` : ''}
+      <div class="muted small">${d.items.length} упр. · ${stats[di].sets} подх. · ≈ ${stats[di].min} мин</div>
+      <div class="muted small">${d.items.map(it => esc(exById(it.exId).name)).join(' · ') || 'Упражнений пока нет'}</div></div></a>
+    <div class="row"><a class="btn sm" href="#/program/${p.id}/${di}">Подробнее</a>
+      <button class="btn sm primary" data-a="start" data-p="${p.id}" data-d="${di}">▶ Начать</button></div>
+  </section>`;
+  }).join('') || `<div class="empty">Добавьте тренировочные дни</div>`}
+  <button class="btn block" data-a="dAdd" data-p="${p.id}">+ Тренировочный день</button>
+  ${loads.length ? `<h2>Нагрузка за неделю, подходов</h2><section class="card">${loads.map(([m, v]) =>
+    `<div class="bar-row"><span>${MUSCLE_RU[m]}</span><div class="bar"><i style="width:${Math.round(v / top * 100)}%"></i></div><b>${v}</b></div>`).join('')}
+    <div class="muted small" style="margin-top:8px">Считаются подходы упражнений, где мышца — основная.</div></section>` : ''}`;
+}
+// Подробный просмотр одного дня программы: какие мышцы работают и что именно делать.
+function pgDay(p, di) {
+  const d = p.days[di], [pri, sec] = dayMuscles(d.items), st = dayStats(d);
+  const at = `data-p="${p.id}" data-d="${di}"`;
+  return `<header class="top"><a class="ic" href="#/program/${p.id}">‹</a><h1>${esc(d.name)}</h1>
+    <button class="ic" data-a="dMenu" ${at}>⋮</button></header>
+  <div class="sub">${esc(p.name)}</div>
+  ${pri.length ? `<h2>Мышцы этого дня</h2><section class="card">${mapHtml(pri, sec)}</section>` : ''}
+  <div class="tiles">
+    <div class="tile"><b>${d.items.length}</b><span>упражнений</span></div>
+    <div class="tile"><b>${st.sets}</b><span>подходов</span></div>
+    <div class="tile"><b>≈ ${st.min}</b><span>минут</span></div>
+  </div>
+  <h2>Упражнения</h2>
+  ${d.items.map((it, ii) => {
+    const ex = exById(it.exId), rest = it.rest || db.settings.rest;
+    return `<section class="card plan">${thumb(ex.id, true)}
+      <button class="grow" data-a="piEdit" ${at} data-x="${ii}"><b>${ii + 1}. ${esc(ex.name)}</b>
+        <div class="small">${itemPlan(it)}${ex.kind !== 'cardio' && rest ? ` · отдых ${fmtDur(rest * 1000)}` : ''}</div>
+        <div class="muted small">${muscleNames(exMuscles(ex)[0]) || esc(ex.muscle)}${it.ss ? ' · ⇅ суперсет со следующим' : ''}</div></button>
+      <button class="ic sm" data-a="piEdit" ${at} data-x="${ii}" aria-label="Изменить">✎</button></section>`;
+  }).join('') || `<div class="empty">Упражнений пока нет</div>`}
+  <div class="muted small" style="margin:0 2px 12px">Нажмите на фото, чтобы увидеть технику и мышцы, на название — чтобы изменить подходы, повторы и отдых.</div>
+  <button class="btn block" data-a="piAdd" ${at}>+ Добавить упражнение</button>
+  <button class="btn block primary" data-a="start" ${at}>▶ Начать тренировку</button>`;
+}
+
+/* ---------- экран: упражнения ---------- */
+const ef = { q: '', m: '' }, pf = { q: '', m: '' };
+function exBox(f) {
+  const q = f.q.toLowerCase();
+  const list = db.exercises.filter(e => !e.archived && (!f.m || e.muscle === f.m) && (!q || e.name.toLowerCase().includes(q)))
+    .sort((a, b) => MUSCLES.indexOf(a.muscle) - MUSCLES.indexOf(b.muscle) || a.name.localeCompare(b.name, 'ru'));
+  let last = null;
+  return `<div class="chips"><button class="chip ${f.m ? '' : 'on'}" data-a="exMuscle" data-m="">Все</button>
+    ${MUSCLES.map(m => `<button class="chip ${f.m === m ? 'on' : ''}" data-a="exMuscle" data-m="${m}">${m}</button>`).join('')}</div>
+  ${list.map(e => (e.muscle !== last ? `<h2>${esc(last = e.muscle)}</h2>` : '') +
+    `<button class="li" data-a="exTap" data-id="${e.id}">${thumb(e.id)}<span class="grow">${esc(e.name)}</span><span class="muted small">${esc(e.equip)}</span></button>`).join('')
+    || `<div class="empty">Ничего не найдено</div>`}`;
+}
+function pgExercises() {
+  return `<header class="top"><h1>Упражнения</h1><button class="ic" data-a="exAdd" aria-label="Добавить">＋</button></header>
+  <input class="search" type="search" placeholder="Поиск упражнения" data-in="exSearch" value="${esc(ef.q)}">
+  <div id="exbox">${exBox(ef)}</div>`;
+}
+function pickExercise() {
+  pf.q = '';
+  const p = sheet(`<h3>Выберите упражнение</h3>
+    <input class="search" type="search" placeholder="Поиск упражнения" data-in="exSearch">
+    <div id="pexbox">${exBox(pf)}</div>`);
+  picker = true;
+  return p;
+}
+
+// Итоги упражнения по тренировкам (от старых к новым): a/b — максимум первого и второго поля подхода.
+let metric = 'rm';
+function sessions(exId) {
+  const out = [];
+  for (const w of sortedW().reverse()) {
+    const sets = w.items.filter(it => it.exId === exId).flatMap(it => it.sets.filter(isWork));
+    if (!sets.length) continue;
+    out.push({
+      t: w.start, w, sets,
+      a: Math.max(...sets.map(s => s.w || 0)),
+      b: Math.max(...sets.map(s => s.r || 0)),
+      reps: sets.reduce((x, s) => x + (s.r || 0), 0),
+      rm: +Math.max(...sets.map(s => (s.w || 0) * (1 + (s.r || 0) / 30))).toFixed(1),
+      vol: Math.round(sets.reduce((x, s) => x + (s.w || 0) * (s.r || 0), 0)),
+    });
+  }
+  return out;
+}
+function pgExercise(id) {
+  const ex = exById(id), k = KINDS[ex.kind] || KINDS.wr, wr = ex.kind === 'wr';
+  const ser = sessions(id), last = ser[ser.length - 1], prev = ser[ser.length - 2], first = ser[0];
+  const all = ser.flatMap(p => p.sets);
+  const best = all.reduce((a, s) => (s.w || 0) > (a.w || 0) || ((s.w || 0) === (a.w || 0) && (s.r || 0) > (a.r || 0)) ? s : a, {});
+  const rm = Math.max(0, ...ser.map(p => p.rm));
+  const hasA = ser.some(p => p.a > 0);
+  const rows = [hasA && ['a', 'Макс. ' + k.a], ['b', 'Макс. ' + k.b], ['reps', 'Всего ' + k.b],
+    wr && hasA && ['vol', 'Объём, кг'], wr && hasA && ['rm', '1ПМ, кг']].filter(Boolean);
+  const series = key => ser.map(p => ({ t: p.t, v: p[key] }));
+  if (metric !== 'vol') metric = 'rm';
+  return `<header class="top"><button class="ic" data-a="back">‹</button><h1>${esc(ex.name)}</h1>
+    <button class="ic" data-a="exMenu" data-id="${ex.id}">⋮</button></header>
+  <div class="sub">${esc([ex.muscle, ex.equip, k.name].filter(Boolean).join(' · '))}</div>
+  ${demo(ex.id)}
+  ${muscleMap(ex) ? `<section class="card">${muscleMap(ex)}</section>` : ''}
+  ${techHtml(ex) ? `<h2>Техника</h2><section class="card">${techHtml(ex)}</section>` : ''}
+  <div class="tiles">
+    <div class="tile"><b>${ser.length}</b><span>тренировок</span></div>
+    <div class="tile"><b>${all.length ? setTxt(best, ex.kind) : '—'}</b><span>лучший подход</span></div>
+    <div class="tile"><b>${wr && rm ? n(Math.round(rm)) : all.length}</b><span>${wr && rm ? 'расчётный 1ПМ, кг' : 'подходов'}</span></div>
+  </div>
+  ${!ser.length ? `<div class="empty">Это упражнение ещё не выполнялось.<br>После первой тренировки здесь появится прогресс.</div>` : `
+  <h2>Прогресс</h2>
+  <section class="card">
+    <div class="prog head"><span></span><span>сейчас</span><span>к прошлой</span><span>за всё время</span></div>
+    ${rows.map(([key, label]) => `<div class="prog"><span>${label}</span><b>${n(last[key])}</b>
+      <span>${prev ? dl(last[key] - prev[key]) : '—'}</span><span>${prev ? dl(last[key] - first[key]) : '—'}</span></div>`).join('')}
+    ${prev ? '' : `<div class="muted small" style="margin-top:8px">Сравнение появится после второй тренировки</div>`}
+  </section>
+  ${hasA ? `<h2>Прогресс: ${wr ? 'вес' : k.a}</h2><section class="card">${chart('exa', series('a'), k.a)}</section>` : ''}
+  <h2>Прогресс: ${wr ? 'повторения' : k.b}</h2><section class="card">${chart('exb', series('b'), k.b)}</section>
+  ${wr && hasA ? `<h2>Сила и объём</h2><section class="card">
+    <div class="chips">${[['rm', 'Расчётный 1ПМ'], ['vol', 'Объём за тренировку']].map(([v, l]) =>
+      `<button class="chip ${metric === v ? 'on' : ''}" data-a="metric" data-v="${v}">${l}</button>`).join('')}</div>
+    ${chart('exc', series(metric), 'кг')}</section>` : ''}
+  <h2>История</h2>
+  ${ser.map((p, i) => `<a class="card link" href="#/workout/${p.w.id}"><div class="ex-head"><span class="muted small">${fmtDate(p.t)}</span>
+    ${i ? `<span class="small">${hasA ? dl(p.a - ser[i - 1].a, k.a) : ''} ${dl(p.b - ser[i - 1].b, k.b)}</span>` : ''}</div>
+    <div>${p.sets.map(s => setTxt(s, ex.kind)).join(' · ')}</div></a>`).reverse().join('')}`}`;
+}
+
+/* ---------- экран: замеры ---------- */
+let mType = 'weight';
+/* Фото прогресса лежат в IndexedDB: в localStorage, где остальные данные, они не поместятся. */
+let idb, photos = null;
+const photoUrls = {};
+function photoStore(mode, fn) {
+  idb = idb || new Promise((res, rej) => {
+    const r = indexedDB.open('gymlog-photos', 1);
+    r.onupgradeneeded = () => r.result.createObjectStore('photos', { keyPath: 'id' });
+    r.onsuccess = () => res(r.result);
+    r.onerror = () => rej(r.error);
+  });
+  return idb.then(d => new Promise((res, rej) => {
+    const tx = d.transaction('photos', mode), rq = fn(tx.objectStore('photos'));
+    tx.oncomplete = () => res(rq && rq.result);
+    tx.onerror = () => rej(tx.error);
+  }));
+}
+async function loadPhotos() {
+  try {
+    photos = (await photoStore('readonly', s => s.getAll())).sort((a, b) => a.date - b.date);
+    photos.forEach(p => photoUrls[p.id] = photoUrls[p.id] || URL.createObjectURL(p.blob));
+  } catch (e) { photos = []; toast('Хранилище фото недоступно'); }
+  if (location.hash === '#/measures' && mType === 'photo') render();
+}
+// уменьшаем снимок до 1280 пикселей по длинной стороне — этого хватает для сравнения, а места уходит в разы меньше
+function shrink(file) {
+  return new Promise((res, rej) => {
+    const img = new Image(), url = URL.createObjectURL(file);
+    img.onload = () => {
+      const k = Math.min(1, 1280 / Math.max(img.width, img.height)), c = document.createElement('canvas');
+      c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(url);
+      c.toBlob(b => b ? res(b) : rej(new Error('не удалось обработать снимок')), 'image/jpeg', .85);
+    };
+    img.onerror = () => rej(new Error('файл не похож на изображение'));
+    img.src = url;
+  });
+}
+function photosHtml() {
+  if (!photos) { loadPhotos(); return `<div class="empty">Загрузка…</div>`; }
+  const first = photos[0], last = photos[photos.length - 1];
+  return `${photos.length > 1 ? `<h2>Было и стало</h2><div class="cmp">
+      <figure><img src="${photoUrls[first.id]}" alt=""><figcaption>${fmtDate(first.date)}</figcaption></figure>
+      <figure><img src="${photoUrls[last.id]}" alt=""><figcaption>${fmtDate(last.date)}</figcaption></figure></div>` : ''}
+    <button class="btn block primary" data-a="photoAdd">+ Добавить фото</button>
+    ${photos.length ? `<h2>Все фото</h2><div class="pgrid">${[...photos].reverse().map(p => `<button data-a="photoView" data-id="${p.id}">
+      <img src="${photoUrls[p.id]}" alt="" loading="lazy"><span>${fmtDate(p.date)}</span></button>`).join('')}</div>`
+      : `<div class="empty">Снимайте себя раз в 2–4 недели в одной позе и при одном освещении — изменения, незаметные в зеркале, будут видны на фото.</div>`}
+    <p class="muted small">Фото хранятся только на этом устройстве и в резервную копию не входят.</p>`;
+}
+function pgMeasures() {
+  const chips = `<div class="chips"><button class="chip ${mType === 'photo' ? 'on' : ''}" data-a="mType" data-v="photo">📷 Фото</button>
+    ${MEASURES.map(([v, l]) => `<button class="chip ${mType === v ? 'on' : ''}" data-a="mType" data-v="${v}">${l}</button>`).join('')}</div>`;
+  if (mType === 'photo') return `<header class="top"><h1>Замеры тела</h1></header>${chips}${photosHtml()}`;
+  const [, name, unit] = MEASURES.find(m => m[0] === mType);
+  const list = db.measures.filter(m => m.type === mType).sort((a, b) => a.date - b.date);
+  const diff = list.length > 1 ? list[list.length - 1].value - list[0].value : null;
+  return `<header class="top"><h1>Замеры тела</h1></header>
+  ${chips}
+  <section class="card">${chart('ms', list.map(m => ({ t: m.date, v: m.value })), unit)}
+    ${diff != null ? `<div class="muted small" style="margin-top:6px">Изменение за всё время: ${diff > 0 ? '+' : ''}${n(diff)} ${unit}</div>` : ''}</section>
+  <button class="btn block primary" data-a="mAdd">+ Добавить замер: ${name.toLowerCase()}</button>
+  ${list.length ? `<h2>Записи</h2><section class="card">${[...list].reverse().map(m => `<button class="li" data-a="mDel" data-id="${m.id}">
+    <span>${fmtDate(m.date)}</span><b>${n(m.value)} ${unit}</b></button>`).join('')}</section>` : ''}`;
+}
+
+/* ---------- экран: ещё ---------- */
+function pgMore() {
+  const s = db.settings, opt = (v, l, cur) => `<option value="${v}" ${v === cur ? 'selected' : ''}>${l}</option>`;
+  return `<header class="top"><h1>Ещё</h1></header>
+  <h2>Настройки</h2>
+  <section class="card">
+    <label class="switch"><span>Отдых между подходами</span><select data-in="setting" data-k="rest">
+      ${[0, 30, 45, 60, 90, 120, 150, 180, 240, 300].map(v => opt(v, v ? fmtDur(v * 1000) : 'Выключен', s.rest)).join('')}</select></label>
+    <label class="switch"><span>Звук по окончании отдыха</span><input type="checkbox" data-in="setting" data-k="sound" ${s.sound ? 'checked' : ''}></label>
+    <label class="switch"><span>Вибрация</span><input type="checkbox" data-in="setting" data-k="vibro" ${s.vibro ? 'checked' : ''}></label>
+    <label class="switch"><span>Не гасить экран во время тренировки</span><input type="checkbox" data-in="setting" data-k="keepOn" ${s.keepOn !== false ? 'checked' : ''}></label>
+    <label class="switch"><span>Тема</span><select data-in="setting" data-k="theme">
+      ${opt('dark', 'Тёмная', s.theme)}${opt('light', 'Светлая', s.theme)}${opt('auto', 'Как в системе', s.theme)}</select></label>
+  </section>
+  <h2>Обновление</h2>
+  <section class="card">
+    <div class="switch"><span>Версия приложения</span><b>${esc(ver.name || "—")}</b></div>
+    ${NATIVE ? `<label class="field"><span>Адрес сервера обновлений</span>
+      <input type="text" inputmode="url" data-in="setting" data-k="updUrl" value="${esc(updUrl())}" placeholder="https://…"></label>
+    <label class="switch"><span>Проверять при запуске</span><input type="checkbox" data-in="setting" data-k="updAuto" ${s.updAuto !== false ? "checked" : ""}></label>` : ""}
+    <button class="btn block primary" id="updBtn" data-a="update" style="margin:8px 0 0">Проверить обновления</button>
+  </section>
+  <h2>Данные</h2>
+  <section class="card">
+    <button class="li" data-a="exportJson"><span>Сохранить резервную копию</span><span class="muted small">.json</span></button>
+    <button class="li" data-a="importJson"><span>Восстановить из копии</span><span class="muted small">.json</span></button>
+    <button class="li" data-a="exportCsv"><span>Выгрузить тренировки в таблицу</span><span class="muted small">.csv</span></button>
+    <button class="li" data-a="wipe" style="color:var(--danger)"><span>Удалить все данные</span></button>
+  </section>
+  <p class="muted small">Все данные хранятся только на этом устройстве. Делайте резервную копию, чтобы не потерять их при очистке браузера или смене телефона.</p>
+  <p class="muted small">Фотографии и данные о мышцах — открытая база free-exercise-db (общественное достояние); схема тела — react-body-highlighter (MIT).</p>
+  <p class="muted small">GymLog · ${db.workouts.length} тренировок · ${db.exercises.filter(e => !e.archived).length} упражнений</p>`;
+}
+const notFound = () => `<header class="top"><a class="ic" href="#/workouts">‹</a><h1>Не найдено</h1></header><div class="empty">Запись удалена или не существует</div>`;
+
+/* ---------- техника и замена упражнений ---------- */
+function techHtml(ex) {
+  const m = /^e(\d+)$/.exec(ex.id), t = m && EX_TECH[+m[1]];
+  return `${ex.note ? `<div class="note">${esc(ex.note)}</div>` : ''}${t ? `<ol class="tech">${t.slice(0, -1).map(s => `<li>${s}</li>`).join('')}</ol>
+    <div class="hint">${t[t.length - 1]}</div>` : ''}`;
+}
+// Аналоги — упражнения того же типа на ту же основную мышцу.
+async function pickAnalog(exId) {
+  const ex = exById(exId), main = exMuscles(ex)[0][0];
+  const list = db.exercises.filter(e => !e.archived && e.id !== exId && e.kind === ex.kind && exMuscles(e)[0][0] === main)
+    .sort((a, b) => a.name.localeCompare(b.name, 'ru'));
+  const v = await sheet(`<h3>Чем заменить</h3>
+    <div class="muted small" style="margin:-8px 0 8px">${esc(ex.name)}${main ? ' — основная мышца: ' + MUSCLE_RU[main] : ''}</div>
+    ${list.map(e => `<button class="li" data-a="sheetRes" data-v="${e.id}">${thumb(e.id)}<span class="grow">${esc(e.name)}</span>
+      <span class="muted small">${esc(e.equip)}</span></button>`).join('') || `<div class="empty">Похожих упражнений в справочнике нет</div>`}
+    <button class="btn block" style="margin-top:12px" data-a="sheetRes" data-v="__all">Выбрать из всего справочника</button>`);
+  return v === '__all' ? pickExercise() : v;
+}
+
+/* ---------- экран не гаснет, пока идёт тренировка ---------- */
+let wakeLock = null, wakeWant = null;
+async function syncWake() {
+  const want = !!activeW() && db.settings.keepOn !== false;
+  if (window.Android && Android.keepScreen) {
+    if (want !== wakeWant) Android.keepScreen(wakeWant = want);
+    return;
+  }
+  if (!('wakeLock' in navigator)) return;
+  try {
+    if (want && !wakeLock) {
+      wakeLock = await navigator.wakeLock.request('screen');
+      wakeLock.addEventListener('release', () => wakeLock = null);
+    } else if (!want && wakeLock) { await wakeLock.release(); wakeLock = null; }
+  } catch (e) { /* система отказала (например, режим энергосбережения) — работаем как обычно */ }
+}
+// блокировку система снимает при сворачивании — восстанавливаем при возврате
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') syncWake(); });
+
+/* ---------- сводка за неделю и месяц ---------- */
+const DAY = 864e5;
+const weekStart = ts => { const d = new Date(ts); return new Date(d.getFullYear(), d.getMonth(), d.getDate() - (d.getDay() + 6) % 7).getTime(); };
+const finished = () => db.workouts.filter(w => w.end);
+// Серии недель с тренировками: текущая (cur) и лучшая за всё время (best).
+function weekStreaks() {
+  const weeks = [...new Set(finished().map(w => weekStart(w.start)))].sort((a, b) => a - b);
+  let best = 0, run = 0, prev = null;
+  weeks.forEach(w => { run = prev != null && weekStart(prev + 8 * DAY) === w ? run + 1 : 1; best = Math.max(best, run); prev = w; });
+  const has = new Set(weeks);
+  let at = weekStart(Date.now()), cur = 0;
+  if (!has.has(at)) at = weekStart(at - DAY);   // на этой неделе тренировки ещё не было — серия считается по прошлую
+  while (has.has(at)) { cur++; at = weekStart(at - DAY); }
+  return { cur, best };
+}
+let statKind = 'week', statOff = 0;
+function period(kind, off) {
+  const now = new Date();
+  if (kind === 'week') {
+    const s = new Date(weekStart(Date.now())); s.setDate(s.getDate() - 7 * off);
+    const e = new Date(s); e.setDate(e.getDate() + 7);
+    return [s.getTime(), e.getTime()];
+  }
+  return [new Date(now.getFullYear(), now.getMonth() - off, 1).getTime(), new Date(now.getFullYear(), now.getMonth() - off + 1, 1).getTime()];
+}
+function periodStats([a, b]) {
+  const o = { n: 0, sets: 0, ton: 0, time: 0, mus: {} };
+  finished().filter(w => w.start >= a && w.start < b).forEach(w => {
+    const s = wStats(w);
+    o.n++; o.sets += s.sets; o.ton += s.ton; o.time += w.end - w.start;
+    w.items.forEach(it => {
+      const ex = exById(it.exId), c = it.sets.filter(isWork).length;
+      if (ex.kind !== 'cardio') exMuscles(ex)[0].forEach(m => o.mus[m] = (o.mus[m] || 0) + c);
+    });
+  });
+  return o;
+}
+const tons = kg => kg >= 1000 ? n(+(kg / 1000).toFixed(1)) + ' т' : n(Math.round(kg)) + ' кг';
+const hours = ms => { const m = Math.round(ms / 60000); return m >= 60 ? `${Math.floor(m / 60)} ч ${m % 60} мин` : `${m} мин`; };
+function pgStats() {
+  const range = period(statKind, statOff), cur = periodStats(range), prev = periodStats(period(statKind, statOff + 1));
+  const a = new Date(range[0]), b = new Date(range[1] - DAY), st = weekStreaks();
+  const label = statKind === 'week'
+    ? `${a.getDate()}${a.getMonth() !== b.getMonth() ? ' ' + a.toLocaleDateString('ru-RU', { month: 'short' }) : ''} – ${b.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })}`
+    : a.toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' });
+  const tile = (value, name, diff, unit) => `<div class="tile"><b>${value}</b><span>${name}</span>
+    <div class="small" style="margin-top:4px">${prev.n || cur.n ? dl(diff, unit) : ''}</div></div>`;
+  const mus = Object.entries(cur.mus).sort((x, y) => y[1] - x[1]), top = mus.length ? mus[0][1] : 1;
+  // тоннаж по восьми последним периодам — тренд нагрузки
+  const trend = [7, 6, 5, 4, 3, 2, 1, 0].map(i => { const r = period(statKind, statOff + i); return { t: r[0], v: Math.round(periodStats(r).ton) }; });
+  return `<header class="top"><a class="ic" href="#/workouts">‹</a><h1>Сводка</h1></header>
+  <div class="chips"><button class="chip ${statKind === 'week' ? 'on' : ''}" data-a="statKind" data-v="week">По неделям</button>
+    <button class="chip ${statKind === 'month' ? 'on' : ''}" data-a="statKind" data-v="month">По месяцам</button></div>
+  <section class="card"><div class="cal-head" style="margin:0"><button class="ic sm" data-a="statNav" data-v="1">‹</button>
+    <b>${label}</b><button class="ic sm" data-a="statNav" data-v="-1" ${statOff ? '' : 'disabled'}>›</button></div></section>
+  <div class="tiles two">
+    ${tile(cur.n, 'тренировок', cur.n - prev.n)}
+    ${tile(tons(cur.ton), 'поднято', Math.round(cur.ton - prev.ton), 'кг')}
+    ${tile(hours(cur.time), 'длительность', Math.round((cur.time - prev.time) / 60000), 'мин')}
+    ${tile(cur.sets, 'подходов', cur.sets - prev.sets)}
+  </div>
+  <div class="muted small" style="margin:-4px 2px 12px">Стрелки — сравнение с предыдущ${statKind === 'week' ? 'ей неделей' : 'им месяцем'}.</div>
+  <section class="card"><b>🔥 Серия: ${st.cur} нед. подряд</b>
+    <div class="muted small">Недели, в которые была хотя бы одна тренировка. Лучшая серия — ${st.best} нед.</div></section>
+  <h2>Нагрузка по мышцам, подходов</h2>
+  <section class="card">${mus.map(([m, v]) => `<div class="bar-row"><span>${MUSCLE_RU[m]}</span>
+    <div class="bar"><i style="width:${Math.round(v / top * 100)}%"></i></div><b>${v}</b></div>`).join('')
+    || `<div class="empty small">За этот период тренировок нет</div>`}</section>
+  <h2>Тоннаж: 8 ${statKind === 'week' ? 'недель' : 'месяцев'}</h2>
+  <section class="card">${trend.some(p => p.v) ? chart('st', trend, 'кг') : `<div class="empty small">Пока нет данных</div>`}</section>`;
+}
+
+/* ---------- достижения ---------- */
+// У каждого достижения несколько уровней (tiers); value считается по истории тренировок.
+const AWARDS = [
+  { id: 'workouts', icon: '🏋️', title: 'Постоянство', what: 'тренировок', tiers: [1, 10, 25, 50, 100, 250, 500] },
+  { id: 'streak', icon: '🔥', title: 'Серия недель', what: 'недель подряд', tiers: [2, 4, 8, 12, 26, 52] },
+  { id: 'ton', icon: '⚖️', title: 'Поднятый вес', what: 'тонн', tiers: [1, 10, 50, 100, 250, 500, 1000] },
+  { id: 'sets', icon: '✅', title: 'Подходы', what: 'подходов', tiers: [100, 500, 1000, 2500, 5000, 10000] },
+  { id: 'prs', icon: '🏆', title: 'Личные рекорды', what: 'рекордов веса', tiers: [1, 5, 15, 30, 60, 100] },
+  { id: 'variety', icon: '🧭', title: 'Разнообразие', what: 'разных упражнений', tiers: [5, 10, 20, 35, 50] },
+  { id: 'bench', icon: '💪', title: 'Жим лёжа', what: 'кг в подходе', tiers: [40, 60, 80, 100, 120, 140], ex: 'e0' },
+  { id: 'squat', icon: '🦵', title: 'Приседания со штангой', what: 'кг в подходе', tiers: [50, 80, 100, 120, 150, 180], ex: 'e20' },
+  { id: 'dead', icon: '⛓️', title: 'Становая тяга', what: 'кг в подходе', tiers: [60, 100, 120, 150, 180, 220], ex: 'e15' },
+  { id: 'pull', icon: '🧗', title: 'Подтягивания', what: 'повторов в подходе', tiers: [1, 5, 10, 15, 20], ex: 'e10', reps: true },
+  { id: 'measures', icon: '📏', title: 'Контроль формы', what: 'замеров тела', tiers: [1, 10, 30, 60, 100] },
+];
+function awardValues() {
+  const v = { workouts: 0, ton: 0, sets: 0, prs: 0, measures: db.measures.length, streak: weekStreaks().best };
+  const best = {}, used = new Set(), topW = {}, topR = {};
+  [...finished()].sort((a, b) => a.start - b.start).forEach(w => {
+    const s = wStats(w), day = {};
+    v.workouts++; v.sets += s.sets; v.ton += s.ton / 1000;
+    w.items.forEach(it => it.sets.filter(isWork).forEach(x => {
+      used.add(it.exId);
+      day[it.exId] = Math.max(day[it.exId] || 0, x.w || 0);
+      topW[it.exId] = Math.max(topW[it.exId] || 0, x.w || 0);
+      topR[it.exId] = Math.max(topR[it.exId] || 0, x.r || 0);
+    }));
+    // рекорд — тренировка, где вес в упражнении превысил прежний максимум (первое выполнение не считается)
+    Object.entries(day).forEach(([id, top]) => { if (best[id] && top > best[id]) v.prs++; best[id] = Math.max(best[id] || 0, top); });
+  });
+  v.variety = used.size;
+  AWARDS.forEach(a => { if (a.ex) v[a.id] = (a.reps ? topR : topW)[a.ex] || 0; });
+  return v;
+}
+function awardList() {
+  const v = awardValues();
+  return AWARDS.map(a => ({ ...a, value: v[a.id] || 0, level: a.tiers.filter(t => (v[a.id] || 0) >= t).length }));
+}
+// Запоминает достигнутые уровни и возвращает те, что выросли с прошлой проверки.
+function checkAwards(silent) {
+  const old = db.awards || {}, list = awardList(), news = list.filter(a => a.level > (old[a.id] || 0));
+  db.awards = Object.fromEntries(list.map(a => [a.id, Math.max(a.level, old[a.id] || 0)]));
+  save();
+  return silent ? [] : news;
+}
+function pgAwards() {
+  const list = awardList(), got = list.reduce((s, a) => s + a.level, 0), all = list.reduce((s, a) => s + a.tiers.length, 0);
+  return `<header class="top"><a class="ic" href="#/workouts">‹</a><h1>Достижения</h1></header>
+  <section class="card"><b>Получено уровней: ${got} из ${all}</b>
+    <div class="bar" style="margin-top:10px"><i style="width:${Math.round(got / all * 100)}%"></i></div></section>
+  ${list.map(a => {
+    const next = a.tiers[a.level], from = a.level ? a.tiers[a.level - 1] : 0, val = +(+a.value).toFixed(1);
+    return `<section class="card award ${a.level ? '' : 'locked'}"><div class="aw-ic">${a.icon}</div><div class="grow">
+      <div class="ex-head"><b>${a.title}</b><span class="muted small">уровень ${a.level} из ${a.tiers.length}</span></div>
+      <div class="dots">${a.tiers.map((t, i) => `<i class="${i < a.level ? 'on' : ''}" title="${t}"></i>`).join('')}</div>
+      <div class="bar"><i style="width:${next ? Math.max(0, Math.min(100, Math.round((a.value - from) / (next - from) * 100))) : 100}%"></i></div>
+      <div class="muted small">${next ? `${n(val)} из ${n(next)} ${a.what}` : `Все уровни получены · ${n(val)} ${a.what}`}</div></div></section>`;
+  }).join('')}`;
+}
+
+/* ---------- версия и обновление ---------- */
+// NATIVE — приложение запущено внутри Android-оболочки, которая умеет скачивать новые файлы с сервера обновлений.
+// Оболочка для Windows (WebView2) общается сообщениями — приводим её к тому же интерфейсу, что и Android.
+if (!window.Android && window.chrome && window.chrome.webview) {
+  window.Android = { update: (url, manual) => window.chrome.webview.postMessage({ cmd: 'update', url, manual }) };
+}
+const NATIVE = !!window.Android;
+const DEFAULT_UPDATE_URL = "https://raw.githubusercontent.com/DedMazay321/gymlog/main";
+const updUrl = () => (db.settings.updUrl || DEFAULT_UPDATE_URL).trim().replace(/\/+$/, '');
+const updOk = () => updUrl().startsWith('https://');
+let ver = { version: 0, name: "" };
+fetch("version.json", { cache: "no-store" }).then(r => r.json()).then(v => { ver = v; if (location.hash === "#/more") render(); }).catch(() => {});
+window.onNativeUpdate = r => {
+  const btn = $("#updBtn");
+  if (r.state === "progress") { if (btn) btn.textContent = `Загрузка ${r.done} из ${r.total}…`; return; }
+  if (btn) { btn.disabled = false; btn.textContent = "Проверить обновления"; }
+  if (r.state === "done") {
+    if (!r.manual) return toast(`Загружена версия ${r.name} — применится при следующем запуске`);
+    toast(`Обновлено до версии ${r.name}`);
+    setTimeout(() => location.reload(), 900);
+  } else if (r.manual) toast(r.state === "none" ? "Установлена последняя версия" : "Ошибка обновления: " + r.message);
+};
+
+/* ---------- маршруты ---------- */
+const pages = { workouts: pgWorkouts, workout: pgWorkout, programs: pgPrograms, program: pgProgram, exercises: pgExercises, exercise: pgExercise, measures: pgMeasures, more: pgMore, stats: pgStats, awards: pgAwards };
+const tabOf = { workout: 'workouts', program: 'programs', exercise: 'exercises', stats: 'workouts', awards: 'workouts' };
+function render() {
+  const [page, id, sub] = (location.hash.slice(2) || 'workouts').split('/');
+  const fn = pages[page] || pgWorkouts;
+  $('#app').innerHTML = fn(id, sub);
+  const tab = tabOf[page] || (pages[page] ? page : 'workouts');
+  document.querySelectorAll('#tabs a').forEach(a => a.classList.toggle('on', a.dataset.tab === tab));
+  document.documentElement.dataset.theme = db.settings.theme;
+  syncWake();
+}
+const go = h => { if (location.hash === h) render(); else location.hash = h; };
+window.addEventListener('hashchange', () => { closeSheet(); render(); window.scrollTo(0, 0); });
+
+/* ---------- действия ---------- */
+function newWorkout(name, items) {
+  const act = activeW();
+  if (act) { toast('Сначала завершите текущую тренировку'); return go('#/workout/' + act.id); }
+  const w = { id: uid(), start: Date.now(), end: null, name, note: '', items };
+  db.workouts.push(w); save(); go('#/workout/' + w.id);
+}
+const emptySets = c => Array.from({ length: c }, () => ({ w: null, r: null, done: false }));
+function download(name, text, type) {
+  if (NATIVE && Android.saveFile) return Android.saveFile(name, text, type);
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([text], { type }));
+  a.download = name; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+const exFields = e => [
+  { name: 'name', label: 'Название', value: e.name || '' },
+  { name: 'muscle', label: 'Группа мышц', type: 'select', value: e.muscle || MUSCLES[0], options: MUSCLES.map(m => [m, m]) },
+  { name: 'equip', label: 'Оборудование', type: 'select', value: e.equip || EQUIP[0], options: EQUIP.map(m => [m, m]) },
+  { name: 'kind', label: 'Что записывать', type: 'select', value: e.kind || 'wr', options: Object.entries(KINDS).map(([v, k]) => [v, k.name]) },
+  { name: 'note', label: 'Свои заметки по технике (необязательно)', type: 'textarea', value: e.note || '' },
+];
+
+const actions = {
+  sheetClose: () => closeSheet(),
+  back: () => history.length > 1 ? history.back() : go('#/exercises'),
+  sheetRes: d => closeSheet(d.v),
+  restAdd: d => { if (rest) { rest.end += d.v * 1000; rest.total = Math.max(1, rest.total + +d.v); rest.fired = false; saveRest(); drawRest(); } },
+  restStop: () => stopRest(),
+  calNav: d => { cal.setMonth(cal.getMonth() + +d.v); render(); },
+
+  /* тренировки */
+  async startSheet() {
+    const opts = [['', 'Пустая тренировка']];
+    db.programs.forEach(p => p.days.forEach((dy, di) => opts.push([p.id + '/' + di, `${p.name} — ${dy.name}`])));
+    const v = await menu('Начать тренировку', opts);
+    if (v == null) return;
+    if (!v) return newWorkout('Тренировка', []);
+    const [p, di] = v.split('/');
+    actions.start({ p, d: di });
+  },
+  start(d) {
+    const p = P(d.p), day = p.days[d.d];
+    newWorkout(day.name, day.items.map(pi => ({ exId: pi.exId, rest: pi.rest || null, planR: pi.reps, ss: !!pi.ss, note: '', sets: emptySets(pi.sets) })));
+  },
+  async wRename(d) {
+    const w = W(d.w), r = await form('Название тренировки', [{ name: 'name', label: 'Название', value: w.name }]);
+    if (r && r.name) { w.name = r.name; save(); render(); }
+  },
+  async wMenu(d) {
+    const w = W(d.w);
+    const v = await menu(w.name, [['rename', 'Переименовать'], ['note', 'Заметка к тренировке'], ['date', 'Изменить дату'],
+      w.end && !activeW() ? ['resume', 'Продолжить тренировку'] : null, ['del', 'Удалить тренировку', 1]]);
+    if (v === 'rename') return actions.wRename(d);
+    if (v === 'note') {
+      const r = await form('Заметка', [{ name: 'note', label: 'Текст', type: 'textarea', value: w.note }]);
+      if (r) { w.note = r.note; save(); render(); }
+    }
+    if (v === 'date') {
+      const r = await form('Дата тренировки', [{ name: 'date', label: 'Дата', type: 'date', value: isoDay(w.start) }]);
+      if (r && r.date) {
+        const old = new Date(w.start), [y, m, dd] = r.date.split('-').map(Number);
+        const shift = new Date(y, m - 1, dd, old.getHours(), old.getMinutes(), old.getSeconds()).getTime() - w.start;
+        w.start += shift; if (w.end) w.end += shift;
+        save(); render();
+      }
+    }
+    if (v === 'resume') { w.end = null; save(); render(); }
+    if (v === 'del' && await confirmDlg('Удалить тренировку?')) {
+      if (!w.end) stopRest();
+      db.workouts = db.workouts.filter(x => x !== w); save(); go('#/workouts');
+    }
+  },
+  async wAddEx(d) {
+    const id = await pickExercise();
+    if (!id) return;
+    const prev = prevSets(id, d.w, Infinity);
+    W(d.w).items.push({ exId: id, rest: null, note: '', sets: emptySets(Math.max(1, Math.min(prev.length, 6))) });
+    save(); render();
+  },
+  async wFinish(d) {
+    const w = W(d.w);
+    if (!wStats(w).sets) {
+      if (await confirmDlg('Нет выполненных подходов. Удалить тренировку?')) {
+        db.workouts = db.workouts.filter(x => x !== w); stopRest(); save(); go('#/workouts');
+      }
+      return;
+    }
+    w.items.forEach(it => it.sets = it.sets.filter(s => s.done));
+    w.items = w.items.filter(it => it.sets.length);
+    w.end = Date.now(); stopRest(); save();
+    const news = checkAwards();
+    render();
+    if (news.length) {
+      sheet(`<h3>🏆 Новые достижения</h3>${news.map(a => `<div class="li" style="display:block"><b>${a.icon} ${a.title}</b>
+        <div class="muted small">Уровень ${a.level} из ${a.tiers.length}: ${n(a.tiers[a.level - 1])} ${a.what}</div></div>`).join('')}
+        <div class="row end" style="margin-top:14px"><a class="btn ghost" href="#/awards">Все достижения</a>
+        <button class="btn primary" data-a="sheetClose">Отлично</button></div>`);
+    } else toast('Тренировка завершена 💪');
+  },
+  wRepeat(d) {
+    const w = W(d.w);
+    newWorkout(w.name, w.items.map(it => ({ exId: it.exId, rest: it.rest || null, planR: it.planR, ss: !!it.ss, note: '', sets: emptySets(it.sets.length || 1) })));
+  },
+  async itMenu(d) {
+    const w = W(d.w), i = +d.x, it = w.items[i];
+    const v = await menu(exById(it.exId).name, [['swap', 'Заменить упражнение'],
+      it.ss ? ['ss', 'Разъединить суперсет'] : i < w.items.length - 1 ? ['ss', 'Суперсет со следующим упражнением'] : null,
+      ['up', 'Переместить выше'], ['down', 'Переместить ниже'], ['note', 'Заметка'],
+      ['rest', 'Время отдыха для упражнения'], ['stat', 'Статистика упражнения'], ['del', 'Убрать из тренировки', 1]]);
+    if (v === 'swap') {
+      const id = await pickAnalog(it.exId);
+      if (!id) return;
+      const done = it.sets.filter(s => s.done);
+      // уже выполненные подходы остаются за старым упражнением, оставшиеся переходят к новому
+      if (done.length) {
+        w.items.splice(i + 1, 0, { exId: id, rest: it.rest || null, planR: it.planR, ss: it.ss, note: '', sets: emptySets(Math.max(1, it.sets.length - done.length)) });
+        it.sets = done; it.ss = false;
+      } else { it.exId = id; it.sets = emptySets(it.sets.length); }
+    }
+    if (v === 'ss') it.ss = !it.ss;
+    if (v === 'up') move(w.items, i, -1);
+    if (v === 'down') move(w.items, i, 1);
+    if (v === 'note') {
+      const r = await form('Заметка к упражнению', [{ name: 'note', label: 'Текст', type: 'textarea', value: it.note || '' }]);
+      if (r) it.note = r.note;
+    }
+    if (v === 'rest') {
+      const r = await form('Отдых, секунд', [{ name: 'rest', label: 'Пусто — как в настройках', type: 'number', value: it.rest || '' }]);
+      if (r) it.rest = num(r.rest);
+    }
+    if (v === 'stat') return go('#/exercise/' + it.exId);
+    if (v === 'del') w.items.splice(i, 1);
+    if (v) { save(); render(); }
+  },
+  setAdd(d) {
+    const it = W(d.w).items[d.x], l = it.sets[it.sets.length - 1];
+    it.sets.push({ w: l ? l.w : null, r: l ? l.r : null, done: false });
+    save(); render();
+  },
+  setDel(d) { W(d.w).items[d.x].sets.pop(); save(); render(); },
+  async setType(d) {
+    const it = W(d.w).items[d.x], s = it.sets[d.s];
+    const v = await menu('Тип подхода', [['', 'Рабочий'], ['w', 'Разминочный — не идёт в статистику'], ['f', 'До отказа'],
+      ['d', 'Дроп-сет — без отдыха перед ним'], ['del', 'Удалить подход', 1]]);
+    if (v == null) return;
+    if (v === 'del') it.sets.splice(d.s, 1);
+    else if (v) s.t = v;
+    else delete s.t;
+    save(); render();
+  },
+  setToggle(d, el) {
+    const w = W(d.w), it = w.items[d.x], s = it.sets[d.s];
+    if (s.done) s.done = false;
+    else {
+      // пустые поля заполняются подсказкой — результатом прошлой тренировки
+      const [iw, ir] = el.closest('.set-row').querySelectorAll('input');
+      if (s.w == null) s.w = num(iw.placeholder);
+      if (s.r == null) s.r = num(ir.placeholder);
+      if (s.r == null) { toast('Введите ' + kindOf(it.exId).b); ir.focus(); return; }
+      s.done = true;
+      // в суперсете сразу идём к следующему упражнению, перед дроп-сетом тоже не отдыхаем
+      const next = it.sets[+d.s + 1], noRest = it.ss || (next && next.t === 'd');
+      if (!w.end && !noRest) startRest(it.rest || db.settings.rest);
+    }
+    save(); render();
+  },
+
+  /* программы */
+  wizOpen() { sheet(wizHtml()); },
+  wizSet(d) {
+    wiz[d.k] = d.k === 'days' ? +d.v : d.v;
+    if (!splitOk(wiz.split, wiz.days, wiz.place)) wiz.split = 'auto';
+    const el = $('.sheet'), top = el.scrollTop;
+    el.innerHTML = wizHtml(); el.scrollTop = top;
+  },
+  wizCreate() {
+    const p = buildProgram(wiz);
+    p.id = uid();
+    p.days.forEach(d => d.id = uid());
+    db.programs.push(p); save(); closeSheet(); go('#/program/' + p.id);
+    toast('Программа создана — её можно изменить под себя');
+  },
+  async pAdd() {
+    const r = await form('Новая программа', [{ name: 'name', label: 'Название', value: '', placeholder: 'Например: Сплит на 3 дня' }]);
+    if (!r || !r.name) return;
+    const p = { id: uid(), name: r.name, days: [] };
+    db.programs.push(p); save(); go('#/program/' + p.id);
+  },
+  async pTemplates() {
+    const v = await menu('Готовые программы', PROGRAM_TEMPLATES.map((t, i) => [i, `${t.name} · ${t.days.length} дн.`]));
+    if (v == null) return;
+    const t = PROGRAM_TEMPLATES[v];
+    const p = { id: uid(), name: t.name, days: t.days.map(d => ({ id: uid(), name: d.name, items: d.items.map(([e, sets, reps]) => ({ exId: 'e' + e, sets, reps, rest: null })) })) };
+    db.programs.push(p); save(); go('#/program/' + p.id);
+  },
+  async pRename(d) {
+    const p = P(d.p), r = await form('Название программы', [{ name: 'name', label: 'Название', value: p.name }]);
+    if (r && r.name) { p.name = r.name; save(); render(); }
+  },
+  async pMenu(d) {
+    const v = await menu(P(d.p).name, [['rename', 'Переименовать'], ['del', 'Удалить программу', 1]]);
+    if (v === 'rename') return actions.pRename(d);
+    if (v === 'del' && await confirmDlg('Удалить программу? История тренировок сохранится.')) {
+      db.programs = db.programs.filter(p => p.id !== d.p); save(); go('#/programs');
+    }
+  },
+  async dAdd(d) {
+    const p = P(d.p), r = await form('Новый день', [{ name: 'name', label: 'Название', value: 'День ' + (p.days.length + 1) }]);
+    if (r && r.name) { p.days.push({ id: uid(), name: r.name, items: [] }); save(); render(); }
+  },
+  async dMenu(d) {
+    const p = P(d.p), i = +d.d, day = p.days[i];
+    const v = await menu(day.name, [['rename', 'Переименовать'], ['up', 'Переместить выше'], ['down', 'Переместить ниже'], ['del', 'Удалить день', 1]]);
+    if (v === 'rename') {
+      const r = await form('Название дня', [{ name: 'name', label: 'Название', value: day.name }]);
+      if (r && r.name) day.name = r.name;
+    }
+    if (v === 'up') move(p.days, i, -1);
+    if (v === 'down') move(p.days, i, 1);
+    if (v === 'del') p.days.splice(i, 1);
+    // порядок дней изменился — со страницы дня возвращаемся к обзору программы
+    if (v === 'del' || v === 'up' || v === 'down') { save(); return go('#/program/' + p.id); }
+    if (v) { save(); render(); }
+  },
+  async piAdd(d) {
+    const id = await pickExercise();
+    if (!id) return;
+    const k = exById(id).kind;
+    P(d.p).days[d.d].items.push({ exId: id, sets: k === 'cardio' ? 1 : 3, reps: k === 'cardio' ? 20 : k === 'time' ? 60 : 10, rest: null });
+    save(); render();
+  },
+  async piEdit(d) {
+    const items = P(d.p).days[d.d].items, i = +d.x, it = items[i], ex = exById(it.exId);
+    const r = await form(ex.name, [
+      { name: 'sets', label: 'Подходов', type: 'number', value: it.sets },
+      { name: 'reps', label: (KINDS[ex.kind] || KINDS.wr).b + ' в подходе', type: 'number', value: it.reps },
+      { name: 'rest', label: 'Отдых, сек (пусто — как в настройках)', type: 'number', value: it.rest || '' },
+      { name: 'ss', label: 'Суперсет со следующим упражнением', type: 'select', value: it.ss ? 'yes' : 'no', options: [['no', 'Нет'], ['yes', 'Да — без отдыха между ними']] },
+    ], `<button type="button" class="btn sm" data-a="sheetRes" data-v="swap">Заменить</button>
+        <button type="button" class="btn sm" data-a="sheetRes" data-v="up">↑</button>
+        <button type="button" class="btn sm" data-a="sheetRes" data-v="down">↓</button>
+        <button type="button" class="btn sm danger" data-a="sheetRes" data-v="del">Убрать</button>`);
+    if (!r) return;
+    if (r === 'swap') {
+      const id = await pickAnalog(it.exId);
+      if (!id) return;
+      it.exId = id;
+    } else if (r === 'up') move(items, i, -1);
+    else if (r === 'down') move(items, i, 1);
+    else if (r === 'del') items.splice(i, 1);
+    else {
+      it.sets = Math.max(1, Math.min(20, Math.round(num(r.sets) || 1)));
+      it.reps = num(r.reps) || it.reps;
+      it.rest = num(r.rest);
+      it.ss = r.ss === 'yes';
+    }
+    save(); render();
+  },
+
+  /* упражнения */
+  exMuscle(d) {
+    const f = picker ? pf : ef;
+    f.m = d.m;
+    $(picker ? '#pexbox' : '#exbox').innerHTML = exBox(f);
+  },
+  exTap(d) { picker ? closeSheet(d.id) : go('#/exercise/' + d.id); },
+  async exAdd() {
+    const r = await form('Новое упражнение', exFields({ muscle: ef.m }));
+    if (!r || !r.name) return;
+    const e = { id: uid(), custom: true, ...r };
+    db.exercises.push(e); save(); go('#/exercise/' + e.id);
+  },
+  async exMenu(d) {
+    const e = exById(d.id);
+    const v = await menu(e.name, [['edit', 'Изменить'], ['del', 'Удалить из справочника', 1]]);
+    if (v === 'edit') {
+      const r = await form('Изменить упражнение', exFields(e));
+      if (r && r.name) { Object.assign(e, r); save(); render(); }
+    }
+    if (v === 'del' && await confirmDlg('Удалить упражнение? Записи в истории тренировок сохранятся.')) {
+      e.archived = true;
+      db.programs.forEach(p => p.days.forEach(dy => dy.items = dy.items.filter(it => it.exId !== e.id)));
+      save(); go('#/exercises');
+    }
+  },
+  metric(d) { metric = d.v; render(); },
+  demo(d) {
+    sheet(`<h3>${esc(exById(d.id).name)}</h3>${demo(d.id)}${muscleMap(exById(d.id))}${techHtml(exById(d.id))}
+      <div class="row end"><a class="btn ghost" href="#/exercise/${d.id}">Статистика</a><button class="btn" data-a="sheetClose">Закрыть</button></div>`);
+  },
+
+  /* замеры */
+  mType(d) { mType = d.v; render(); },
+  photoAdd() { $('#photoInp').click(); },
+  async photoView(d) {
+    const p = photos.find(x => x.id === d.id);
+    const v = await sheet(`<h3>${fmtDate(p.date)}</h3><img class="pfull" src="${photoUrls[p.id]}" alt="">
+      <div class="row end" style="margin-top:12px"><button class="btn danger" data-a="sheetRes" data-v="del">Удалить</button>
+      <button class="btn" data-a="sheetClose">Закрыть</button></div>`);
+    if (v === 'del' && await confirmDlg('Удалить это фото?')) {
+      await photoStore('readwrite', st => st.delete(p.id));
+      URL.revokeObjectURL(photoUrls[p.id]); delete photoUrls[p.id];
+      await loadPhotos(); render();
+    }
+  },
+  statKind(d) { statKind = d.v; statOff = 0; render(); },
+  statNav(d) { statOff = Math.max(0, statOff + +d.v); render(); },
+  async mAdd() {
+    const [, name, unit] = MEASURES.find(m => m[0] === mType);
+    const r = await form(`${name}, ${unit}`, [
+      { name: 'value', label: 'Значение', type: 'number', value: '' },
+      { name: 'date', label: 'Дата', type: 'date', value: isoDay(Date.now()) },
+    ]);
+    if (!r) return;
+    const v = num(r.value);
+    if (v == null) return toast('Введите число');
+    const [y, m, dd] = (r.date || isoDay(Date.now())).split('-').map(Number);
+    db.measures.push({ id: uid(), type: mType, value: v, date: new Date(y, m - 1, dd, 12).getTime() });
+    save(); render();
+  },
+  async mDel(d) {
+    if (await confirmDlg('Удалить эту запись?')) { db.measures = db.measures.filter(m => m.id !== d.id); save(); render(); }
+  },
+
+  /* обновление */
+  async update() {
+    const btn = $("#updBtn");
+    if (NATIVE) {
+      if (!updOk()) return toast("Укажите адрес сервера обновлений (https://…)");
+      if (btn) { btn.disabled = true; btn.textContent = "Проверяю…"; }
+      return Android.update(updUrl(), true);
+    }
+    // в браузере приложение обновляется с того же адреса, откуда открыто
+    try {
+      const v = await (await fetch("version.json?" + Date.now(), { cache: "no-store" })).json();
+      if (!(v.version > ver.version)) return toast("Установлена последняя версия");
+      if (window.caches) await Promise.all((await caches.keys()).map(k => caches.delete(k)));
+      const reg = navigator.serviceWorker && await navigator.serviceWorker.getRegistration();
+      if (reg) await reg.update();
+      location.reload();
+    } catch (e) { toast("Не удалось проверить обновления — нет связи"); }
+  },
+
+  /* данные */
+  exportJson() { download(`gymlog-${isoDay(Date.now())}.json`, JSON.stringify(db), 'application/json'); },
+  importJson() { $('#imp').click(); },
+  exportCsv() {
+    const rows = [['Дата', 'Тренировка', 'Упражнение', 'Подход', 'Вес/км', 'Повторы/сек/мин']];
+    sortedW().reverse().forEach(w => w.items.forEach(it => it.sets.filter(s => s.done).forEach((s, j) =>
+      rows.push([isoDay(w.start), w.name, exById(it.exId).name, j + 1, n(s.w), n(s.r)]))));
+    download(`gymlog-${isoDay(Date.now())}.csv`, '﻿' + rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(';')).join('\r\n'), 'text/csv');
+  },
+  async wipe() {
+    if (await confirmDlg('Удалить все тренировки, программы и замеры без возможности восстановления?', 'Удалить всё')) {
+      db = fresh(); stopRest(); save();
+      try { await photoStore('readwrite', st => st.clear()); photos = []; } catch (e) { /* фото не было */ }
+      render(); toast('Данные удалены');
+    }
+  },
+};
+
+const inputs = {
+  setVal(d, el) { W(d.w).items[d.x].sets[d.s][d.f] = num(el.value); save(); },
+  exSearch(d, el) {
+    const f = picker ? pf : ef;
+    f.q = el.value;
+    $(picker ? '#pexbox' : '#exbox').innerHTML = exBox(f);
+  },
+  setting(d, el) {
+    db.settings[d.k] = el.type === 'checkbox' ? el.checked : d.k === 'rest' ? +el.value : el.value;
+    save(); document.documentElement.dataset.theme = db.settings.theme; syncWake();
+  },
+};
+
+document.addEventListener('click', e => {
+  const el = e.target.closest('[data-a]');
+  if (el && actions[el.dataset.a]) actions[el.dataset.a](el.dataset, el, e);
+});
+document.addEventListener('input', e => {
+  const el = e.target.closest('[data-in]');
+  if (el && inputs[el.dataset.in]) inputs[el.dataset.in](el.dataset, el);
+});
+// выделять содержимое поля подхода при касании, чтобы сразу вводить новое число
+document.addEventListener('focusin', e => { if (e.target.matches('.set-row input')) e.target.select(); });
+
+$('#imp').addEventListener('change', async e => {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  try {
+    const d = JSON.parse(await file.text());
+    if (!d || !d.version || !Array.isArray(d.workouts) || !Array.isArray(d.exercises)) throw new Error('bad');
+    if (!await confirmDlg(`Заменить текущие данные копией (${d.workouts.length} тренировок)?`, 'Заменить')) return;
+    db = { ...fresh(), ...d, settings: { ...fresh().settings, ...d.settings } };
+    save(); render(); toast('Данные восстановлены');
+  } catch (err) { toast('Это не файл резервной копии GymLog'); }
+});
+
+$('#photoInp').addEventListener('change', async e => {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  try {
+    const blob = await shrink(file);
+    await photoStore('readwrite', st => st.put({ id: uid(), date: Date.now(), blob }));
+    await loadPhotos(); render(); toast('Фото добавлено');
+  } catch (err) { toast('Не удалось добавить фото: ' + err.message); }
+});
+
+// при первом запуске этой версии уровни достижений запоминаем молча, без поздравлений за старую историю
+if (!db.awards) checkAwards(true);
+if (navigator.storage && navigator.storage.persist) navigator.storage.persist();
+if (!NATIVE && 'serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js');
+
+render();
+drawRest();
+if (NATIVE && db.settings.updAuto !== false && updOk()) Android.update(updUrl(), false);
