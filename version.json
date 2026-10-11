@@ -1,9 +1,9 @@
 {
- "version": 8,
- "name": "1.7",
- "notes": "Адрес обновлений встроен в приложение",
+ "version": 9,
+ "name": "1.8",
+ "notes": "Графики прогресса в сводке: тоннаж, тренировки, подходы, время, сила и вес тела",
  "files": {
-  "app.js": "b01fd988d9cba77a51bd22bdde2018af81b0a002a193af639ecdb1be330db561",
+  "app.js": "b9c14bc4b59803006814061e1fe2f570d04ba5a585d3f123a8b57b7b286e00c0",
   "body.js": "ef4d9fbb8e18f93d0f30c11b4c5ff32455f7b4d93a4e76d9e030a58eba6ef83c",
   "exercises.js": "a06cb903ad320a55fdb7accd9e7cbc7dc9f5bee4a586a3c193e5c643a2f7a40c",
   "icons/icon-192.png": "fcd36f043b1ff35b61e33747e6b21380e7607a1eb8baa957fa1018264d6a8b70",
@@ -179,7 +179,7 @@
   "img/e9_1.jpg": "b916ff565039208b3baec76e141b4963f4e90aac17dff25c99098d6fc2131251",
   "index.html": "b1f550cacff2adf5ca50f8d6b41d62df807547f04a4ede981812ff79caf4fe45",
   "manifest.json": "94842a0eaf89b834d9943206744fba3df196f42d84693cd9b17c2d14095c52e0",
-  "styles.css": "77653f7473cdd76bfb0f12fe166f6fbecf9c5ee6e2b4ad6aa167ecbf8704ae8a",
+  "styles.css": "005a5d12cac1b97caa62d2e46d256acf2ff15508b5d98a52708b8fbe382f37b4",
   "sw.js": "55ea225a9c6f5a5541c222872bda93f70fd72886921db6b0d6cb01a12919a8a8",
   "tech.js": "bf5dabb4f5db61d1b4e68b300a61688c091a1bb3a50e43b3519c1f9dc7468c1b"
  }

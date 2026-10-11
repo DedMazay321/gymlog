@@ -317,6 +317,37 @@ function chart(id, pts, unit) {
       <circle class="hl" cx="${last.x}" cy="${last.y}" r="5"/>
     </svg></div>`;
 }
+// Столбцы по периодам (недели, месяцы). Подпись и перекрестие работают так же, как у линейного графика.
+function bars(id, pts, unit, fmt = n) {
+  const Wd = 340, H = 170, L = 38, R = 10, T = 10, B = 22, base = H - B;
+  // верх шкалы — три «круглых» шага (1, 2, 2.5, 5 × 10ⁿ), чтобы подписи оси были целыми
+  const raw = Math.max(1, ...pts.map(p => p.v)) / 3, pow = Math.pow(10, Math.floor(Math.log10(raw))), frac = raw / pow;
+  const tick = Math.max(1, (frac <= 1 ? 1 : frac <= 2 ? 2 : frac <= 2.5 && pow >= 10 ? 2.5 : frac <= 5 ? 5 : 10) * pow), hi = tick * 3;
+  const step = (Wd - L - R) / pts.length, bw = Math.min(18, step - 5);
+  const Y = v => T + (hi - v) / hi * (H - T - B);
+  const xy = pts.map((p, i) => ({ x: L + step * (i + .5), y: Y(p.v), l: `${p.label} — <b>${fmt(p.v)}${unit ? ' ' + unit : ''}</b>` }));
+  charts[id] = { xy, Wd };
+  const last = xy[xy.length - 1];
+  const grid = [0, 1, 2, 3].map(k => {
+    const v = tick * k, y = Y(v);
+    return `<line class="grid" x1="${L}" x2="${Wd - R}" y1="${y}" y2="${y}"/><text class="ax" x="${L - 5}" y="${y + 3}" text-anchor="end">${fmt(v)}</text>`;
+  }).join('');
+  // верх столбца скруглён, низ стоит на оси
+  const bar = p => {
+    const x = p.x - bw / 2, r = Math.min(4, (base - p.y) / 2);
+    return base - p.y < .5 ? '' : `<path class="bar-mark" d="M${x} ${base}V${p.y + r}Q${x} ${p.y} ${x + r} ${p.y}H${x + bw - r}Q${x + bw} ${p.y} ${x + bw} ${p.y + r}V${base}Z"/>`;
+  };
+  return `<div class="chart" data-chart="${id}">
+    <div class="chart-cap">${last.l}</div>
+    <svg viewBox="0 0 ${Wd} ${H}" role="img" aria-label="График">
+      ${grid}
+      <text class="ax" x="${xy[0].x}" y="${H - 5}" text-anchor="middle">${pts[0].short}</text>
+      <text class="ax" x="${last.x}" y="${H - 5}" text-anchor="middle">${pts[pts.length - 1].short}</text>
+      ${xy.map(bar).join('')}
+      <line class="cross" x1="${last.x}" x2="${last.x}" y1="${T}" y2="${base}"/>
+      <circle class="hl" cx="${last.x}" cy="${last.y}" r="4"/>
+    </svg></div>`;
+}
 function chartHover(e) {
   const box = e.target.closest && e.target.closest('.chart');
   const c = box && charts[box.dataset.chart];
@@ -774,7 +805,7 @@ function weekStreaks() {
   while (has.has(at)) { cur++; at = weekStart(at - DAY); }
   return { cur, best };
 }
-let statKind = 'week', statOff = 0;
+let statKind = 'week', statOff = 0, statMetric = 'ton', statLift = null;
 function period(kind, off) {
   const now = new Date();
   if (kind === 'week') {
@@ -807,8 +838,21 @@ function pgStats() {
   const tile = (value, name, diff, unit) => `<div class="tile"><b>${value}</b><span>${name}</span>
     <div class="small" style="margin-top:4px">${prev.n || cur.n ? dl(diff, unit) : ''}</div></div>`;
   const mus = Object.entries(cur.mus).sort((x, y) => y[1] - x[1]), top = mus.length ? mus[0][1] : 1;
-  // тоннаж по восьми последним периодам — тренд нагрузки
-  const trend = [7, 6, 5, 4, 3, 2, 1, 0].map(i => { const r = period(statKind, statOff + i); return { t: r[0], v: Math.round(periodStats(r).ton) }; });
+  // 12 последних периодов: по ним строятся графики прогресса
+  const week = statKind === 'week';
+  const hist = [11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0].map(i => {
+    const r = period(statKind, statOff + i), d0 = new Date(r[0]), d1 = new Date(r[1] - DAY);
+    const short = week ? d0.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }) : d0.toLocaleDateString('ru-RU', { month: 'short', year: '2-digit' });
+    return { ...periodStats(r), short, label: week ? `${short} – ${d1.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })}` : d0.toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' }) };
+  });
+  const METRICS = { ton: ['Тоннаж', 'кг', h => Math.round(h.ton)], n: ['Тренировки', '', h => h.n], sets: ['Подходы', '', h => h.sets], time: ['Время', 'мин', h => Math.round(h.time / 60000)] };
+  const [, mUnit, mVal] = METRICS[statMetric];
+  // силовой прогресс: упражнения с весом, которые выполнялись чаще всего
+  const count = {};
+  finished().forEach(w => new Set(w.items.filter(it => exById(it.exId).kind === 'wr' && it.sets.some(x => isWork(x) && x.w)).map(it => it.exId)).forEach(id => count[id] = (count[id] || 0) + 1));
+  const lifts = Object.entries(count).filter(c => c[1] > 1).sort((x, y) => y[1] - x[1]).slice(0, 6).map(c => c[0]);
+  if (!lifts.includes(statLift)) statLift = lifts[0];
+  const body = db.measures.filter(m => m.type === 'weight').sort((x, y) => x.date - y.date);
   return `<header class="top"><a class="ic" href="#/workouts">‹</a><h1>Сводка</h1></header>
   <div class="chips"><button class="chip ${statKind === 'week' ? 'on' : ''}" data-a="statKind" data-v="week">По неделям</button>
     <button class="chip ${statKind === 'month' ? 'on' : ''}" data-a="statKind" data-v="month">По месяцам</button></div>
@@ -827,8 +871,19 @@ function pgStats() {
   <section class="card">${mus.map(([m, v]) => `<div class="bar-row"><span>${MUSCLE_RU[m]}</span>
     <div class="bar"><i style="width:${Math.round(v / top * 100)}%"></i></div><b>${v}</b></div>`).join('')
     || `<div class="empty small">За этот период тренировок нет</div>`}</section>
-  <h2>Тоннаж: 8 ${statKind === 'week' ? 'недель' : 'месяцев'}</h2>
-  <section class="card">${trend.some(p => p.v) ? chart('st', trend, 'кг') : `<div class="empty small">Пока нет данных</div>`}</section>`;
+  <h2>Прогресс за 12 ${week ? 'недель' : 'месяцев'}</h2>
+  <section class="card">
+    <div class="chips">${Object.entries(METRICS).map(([k, m]) => `<button class="chip ${statMetric === k ? 'on' : ''}" data-a="statMetric" data-v="${k}">${m[0]}</button>`).join('')}</div>
+    ${hist.some(h => h.n) ? bars('sb', hist.map(h => ({ v: mVal(h), label: h.label, short: h.short })), mUnit) : `<div class="empty small">Пока нет данных</div>`}
+  </section>
+  <h2>Сила: расчётный 1ПМ</h2>
+  <section class="card">${lifts.length ? `<div class="chips">${lifts.map(id => `<button class="chip ${statLift === id ? 'on' : ''}" data-a="statLift" data-v="${id}">${esc(exById(id).name)}</button>`).join('')}</div>
+    ${chart('sl', sessions(statLift).map(p => ({ t: p.t, v: p.rm })), 'кг')}
+    <a class="btn sm" style="display:inline-block;margin-top:10px" href="#/exercise/${statLift}">Подробнее об упражнении</a>`
+    : `<div class="empty small">График появится, когда упражнение с весом будет выполнено хотя бы на двух тренировках</div>`}</section>
+  <h2>Вес тела</h2>
+  <section class="card">${body.length ? chart('sw', body.map(m => ({ t: m.date, v: m.value })), 'кг')
+    : `<div class="empty small">Добавьте замеры веса в разделе «Замеры» — здесь появится график</div>`}</section>`;
 }
 
 /* ---------- достижения ---------- */
@@ -1237,6 +1292,8 @@ const actions = {
   },
   statKind(d) { statKind = d.v; statOff = 0; render(); },
   statNav(d) { statOff = Math.max(0, statOff + +d.v); render(); },
+  statMetric(d) { statMetric = d.v; render(); },
+  statLift(d) { statLift = d.v; render(); },
   async mAdd() {
     const [, name, unit] = MEASURES.find(m => m[0] === mType);
     const r = await form(`${name}, ${unit}`, [

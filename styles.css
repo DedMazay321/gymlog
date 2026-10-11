@@ -274,3 +274,4 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 .pgrid img { width: 100%; aspect-ratio: 3 / 4; object-fit: cover; border-radius: 10px; background: var(--card); }
 .pgrid span { font-size: 11px; color: var(--muted); }
 .pfull { width: 100%; max-height: 62vh; object-fit: contain; border-radius: 14px; background: var(--card); }
+.chart .bar-mark { fill: var(--accent); }
