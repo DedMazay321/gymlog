@@ -298,3 +298,55 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 a.li { color: inherit; }
 .sp-time { font-size: 54px; font-weight: 700; text-align: center; font-variant-numeric: tabular-nums; margin: 4px 0; }
 .sheet .demo { margin-bottom: 0; }
+
+/* ---------- версия 1.11: более дружелюбный интерфейс ---------- */
+.top .grow { flex: 1; min-width: 0; }
+.card.big b { display: block; font-size: 20px; margin: 2px 0; }
+.card.active { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+/* подсказки */
+.tip { display: flex; gap: 10px; align-items: flex-start; background: var(--card2); border-radius: 14px; padding: 12px 12px 12px 14px;
+  margin-bottom: 10px; font-size: 14px; line-height: 1.45; }
+.tip span { flex: 1; }
+.tip button { flex: none; width: 28px; height: 28px; border-radius: 8px; color: var(--muted); font-size: 14px; }
+.tip button:active { background: var(--card); }
+
+/* первый запуск */
+.welcome { text-align: center; padding: calc(28px + env(safe-area-inset-top)) 8px 6px; }
+.welcome .hello { font-size: 46px; }
+.welcome h1 { font-size: 24px; margin: 6px 0 8px; }
+.welcome p { margin: 0 0 14px; font-size: 15px; }
+
+/* полоска недели */
+.strip { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; text-align: center; }
+.strip span { display: block; font-size: 12px; color: var(--muted); margin-bottom: 5px; }
+.strip i { display: grid; place-items: center; width: 34px; height: 34px; margin: 0 auto; border-radius: 50%; font-style: normal;
+  background: var(--card2); color: var(--muted); font-weight: 700; }
+.strip .planned i { background: none; border: 2px dashed var(--accent); color: var(--accent); }
+.strip .missed i { background: none; border: 2px dashed var(--muted); }
+.strip .done i { background: var(--ok); color: #fff; }
+.strip .now span { color: var(--text); font-weight: 700; }
+.strip .now i { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--text); }
+
+/* подход: поле с кнопками − и + */
+.set-row { grid-template-columns: 34px minmax(0, 1fr) minmax(0, 1fr) 46px; gap: 6px; }
+.set-row.head span:nth-child(1) { font-size: 0; }
+.stp { display: flex; align-items: stretch; background: var(--card2); border-radius: 12px; overflow: hidden; min-width: 0; }
+.stp input { flex: 1; min-width: 0; width: 100%; background: none !important; border: 0 !important; border-radius: 0; padding: 9px 0;
+  text-align: center; font-size: 18px; font-weight: 600; }
+.stp button { flex: none; width: 30px; font-size: 20px; color: var(--muted); }
+.stp button:active { background: var(--line); color: var(--text); }
+.set-row.done .stp { background: transparent; box-shadow: inset 0 0 0 1px var(--line); }
+/* номер подхода выглядит как кнопка — по нему меняется тип */
+.set-row .num { height: 44px; border-radius: 10px; background: var(--card2); color: var(--text); font-weight: 700; }
+.set-row .num.t-w, .set-row .num.t-f, .set-row .num.t-d { background: none; }
+.delta { grid-column: 2 / 5; justify-content: flex-start; gap: 12px; padding-left: 4px; margin-top: -2px; align-items: center; }
+.fdot { font-size: 12px; padding: 1px 8px; border-radius: 8px; color: #fff; }
+.fdot.f1 { background: var(--ok); } .fdot.f2 { background: #5b7fa6; } .fdot.f3 { background: var(--danger); }
+.feel { align-items: center; }
+.feel .muted { flex: none; font-size: 12px; background: none; padding: 0 4px 0 0; }
+.card .row .btn.sm { padding: 8px 10px; }
+.row.two .btn { white-space: nowrap; padding: 11px 8px; font-size: 15px; overflow: hidden; text-overflow: ellipsis; }
+.feel { grid-column: 1 / 5; }
+.feel .muted { flex: 1; text-align: left; padding-left: 4px; }
+.feel button { flex: none; padding: 6px 12px; }
