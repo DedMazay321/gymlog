@@ -689,6 +689,7 @@ async function loadPhotos() {
   try {
     photos = (await photoStore('readonly', s => s.getAll())).sort((a, b) => a.date - b.date);
     photos.forEach(p => photoUrls[p.id] = photoUrls[p.id] || URL.createObjectURL(p.blob));
+    if (db.photoCount !== photos.length) { db.photoCount = photos.length; save(); }
   } catch (e) { photos = []; toast('Хранилище фото недоступно'); }
   if (location.hash === '#/measures' && mType === 'photo') render();
 }
@@ -915,35 +916,90 @@ function pgStats() {
 
 /* ---------- достижения ---------- */
 // У каждого достижения несколько уровней (tiers); value считается по истории тренировок.
+const AWARD_GROUPS = { train: 'Тренировки', prog: 'Программы', power: 'Сила и выносливость', health: 'Здоровье и восстановление' };
 const AWARDS = [
-  { id: 'workouts', icon: '🏋️', title: 'Постоянство', what: 'тренировок', tiers: [1, 10, 25, 50, 100, 250, 500] },
-  { id: 'streak', icon: '🔥', title: 'Серия недель', what: 'недель подряд', tiers: [2, 4, 8, 12, 26, 52] },
-  { id: 'ton', icon: '⚖️', title: 'Поднятый вес', what: 'тонн', tiers: [1, 10, 50, 100, 250, 500, 1000] },
-  { id: 'sets', icon: '✅', title: 'Подходы', what: 'подходов', tiers: [100, 500, 1000, 2500, 5000, 10000] },
-  { id: 'prs', icon: '🏆', title: 'Личные рекорды', what: 'рекордов веса', tiers: [1, 5, 15, 30, 60, 100] },
-  { id: 'variety', icon: '🧭', title: 'Разнообразие', what: 'разных упражнений', tiers: [5, 10, 20, 35, 50] },
-  { id: 'bench', icon: '💪', title: 'Жим лёжа', what: 'кг в подходе', tiers: [40, 60, 80, 100, 120, 140], ex: 'e0' },
-  { id: 'squat', icon: '🦵', title: 'Приседания со штангой', what: 'кг в подходе', tiers: [50, 80, 100, 120, 150, 180], ex: 'e20' },
-  { id: 'dead', icon: '⛓️', title: 'Становая тяга', what: 'кг в подходе', tiers: [60, 100, 120, 150, 180, 220], ex: 'e15' },
-  { id: 'pull', icon: '🧗', title: 'Подтягивания', what: 'повторов в подходе', tiers: [1, 5, 10, 15, 20], ex: 'e10', reps: true },
-  { id: 'measures', icon: '📏', title: 'Контроль формы', what: 'замеров тела', tiers: [1, 10, 30, 60, 100] },
+  { id: 'workouts', g: 'train', icon: '🏋️', title: 'Постоянство', what: 'тренировок', tiers: [1, 10, 25, 50, 100, 250, 500] },
+  { id: 'streak', g: 'train', icon: '🔥', title: 'Серия недель', what: 'недель подряд', tiers: [2, 4, 8, 12, 26, 52] },
+  { id: 'weekmax', g: 'train', icon: '⚡', title: 'Ударная неделя', what: 'тренировок за одну неделю', tiers: [3, 4, 5, 6] },
+  { id: 'monthmax', g: 'train', icon: '📅', title: 'Сильный месяц', what: 'тренировок за один месяц', tiers: [8, 12, 16, 20] },
+  { id: 'hours', g: 'train', icon: '⏱️', title: 'Время в деле', what: 'часов тренировок', tiers: [1, 10, 25, 50, 100, 250] },
+  { id: 'sets', g: 'train', icon: '✅', title: 'Подходы', what: 'подходов', tiers: [100, 500, 1000, 2500, 5000, 10000] },
+  { id: 'reps', g: 'train', icon: '🔁', title: 'Повторения', what: 'повторений', tiers: [1000, 5000, 10000, 25000, 50000, 100000] },
+  { id: 'variety', g: 'train', icon: '🧭', title: 'Разнообразие', what: 'разных упражнений', tiers: [5, 10, 20, 35, 50, 80] },
+  { id: 'early', g: 'train', icon: '🌅', title: 'Ранняя пташка', what: 'тренировок до 8 утра', tiers: [1, 5, 15, 30] },
+  { id: 'late', g: 'train', icon: '🌙', title: 'Ночная смена', what: 'тренировок после 21:00', tiers: [1, 5, 15, 30] },
+
+  { id: 'plan', g: 'prog', icon: '📋', title: 'По программе', what: 'тренировок по программе', tiers: [1, 10, 25, 50, 100, 200] },
+  { id: 'cycles', g: 'prog', icon: '🔄', title: 'Полный круг', what: 'раз пройдены все дни программы', tiers: [1, 3, 5, 10, 20, 40] },
+  { id: 'fullweeks', g: 'prog', icon: '🗓️', title: 'Неделя без пропусков', what: 'недель, когда выполнены все дни программы', tiers: [1, 4, 8, 12, 26, 52] },
+  { id: 'loyal', g: 'prog', icon: '🎯', title: 'Верность программе', what: 'тренировок по одной программе', tiers: [5, 12, 24, 36, 60, 100] },
+  { id: 'progs', g: 'prog', icon: '🧪', title: 'Исследователь', what: 'разных программ опробовано', tiers: [1, 2, 3, 5] },
+  { id: 'ontime', g: 'prog', icon: '⏰', title: 'Точно по расписанию', what: 'тренировок в назначенный день недели', tiers: [1, 10, 25, 50, 100] },
+
+  { id: 'ton', g: 'power', icon: '⚖️', title: 'Поднятый вес', what: 'тонн', tiers: [1, 10, 50, 100, 250, 500, 1000] },
+  { id: 'dayton', g: 'power', icon: '🚚', title: 'Тяжёлый день', what: 'тонн за одну тренировку', tiers: [2, 4, 6, 8, 12, 16] },
+  { id: 'prs', g: 'power', icon: '🏆', title: 'Личные рекорды', what: 'рекордов веса', tiers: [1, 5, 15, 30, 60, 100] },
+  { id: 'bench', g: 'power', icon: '💪', title: 'Жим лёжа', what: 'кг в подходе', tiers: [40, 60, 80, 100, 120, 140], ex: 'e0' },
+  { id: 'squat', g: 'power', icon: '🦵', title: 'Приседания со штангой', what: 'кг в подходе', tiers: [50, 80, 100, 120, 150, 180], ex: 'e20' },
+  { id: 'pull', g: 'power', icon: '🧗', title: 'Подтягивания', what: 'повторов в подходе', tiers: [1, 5, 10, 15, 20], ex: 'e10', reps: true },
+  { id: 'push', g: 'power', icon: '🤸', title: 'Отжимания', what: 'повторов в подходе', tiers: [10, 20, 30, 40, 50], ex: 'e8', reps: true },
+  { id: 'plank', g: 'power', icon: '🧱', title: 'Планка', what: 'секунд', tiers: [30, 60, 120, 180, 300], ex: 'e53', reps: true },
+  { id: 'cardio', g: 'power', icon: '🏃', title: 'Кардио', what: 'минут кардио', tiers: [30, 120, 300, 600, 1500, 3000] },
+
+  { id: 'measures', g: 'health', icon: '📏', title: 'Контроль формы', what: 'замеров тела', tiers: [1, 10, 30, 60, 100] },
+  { id: 'photos', g: 'health', icon: '📷', title: 'Фотодневник', what: 'фото прогресса', tiers: [1, 5, 12, 24] },
+  { id: 'water', g: 'health', icon: '💧', title: 'Водный баланс', what: 'дней с выполненной нормой воды', tiers: [1, 7, 30, 100] },
+  { id: 'sleep', g: 'health', icon: '😴', title: 'Режим сна', what: 'ночей со сном от 7 часов', tiers: [1, 7, 30, 100] },
+  { id: 'stretch', g: 'health', icon: '🧘', title: 'Гибкость', what: 'комплексов растяжки', tiers: [1, 5, 20, 50, 100] },
 ];
 function awardValues() {
-  const v = { workouts: 0, ton: 0, sets: 0, prs: 0, measures: db.measures.length, streak: weekStreaks().best };
-  const best = {}, used = new Set(), topW = {}, topR = {};
+  const goal = waterGoal();
+  const v = { workouts: 0, ton: 0, sets: 0, reps: 0, prs: 0, hours: 0, early: 0, late: 0, dayton: 0, cardio: 0, plan: 0, ontime: 0,
+    measures: db.measures.length, streak: weekStreaks().best, stretch: db.stretchDone || 0, photos: photos ? photos.length : db.photoCount || 0,
+    water: Object.values(db.water || {}).filter(ml => ml >= goal).length, sleep: Object.values(db.sleep || {}).filter(h => h >= 7).length };
+  const best = {}, used = new Set(), topW = {}, topR = {}, perWeek = {}, perMonth = {};
+  const prog = {};   // по каждой программе: сколько раз выполнен каждый день и сколько тренировок в каждой неделе
   [...finished()].sort((a, b) => a.start - b.start).forEach(w => {
-    const s = wStats(w), day = {};
-    v.workouts++; v.sets += s.sets; v.ton += s.ton / 1000;
-    w.items.forEach(it => it.sets.filter(isWork).forEach(x => {
-      used.add(it.exId);
-      day[it.exId] = Math.max(day[it.exId] || 0, x.w || 0);
-      topW[it.exId] = Math.max(topW[it.exId] || 0, x.w || 0);
-      topR[it.exId] = Math.max(topR[it.exId] || 0, x.r || 0);
-    }));
+    const s = wStats(w), day = {}, d = new Date(w.start), wk = weekStart(w.start), mo = d.getFullYear() * 12 + d.getMonth();
+    v.workouts++; v.sets += s.sets; v.ton += s.ton / 1000; v.hours += (w.end - w.start) / 36e5;
+    v.dayton = Math.max(v.dayton, s.ton / 1000);
+    if (d.getHours() < 8) v.early++;
+    if (d.getHours() >= 21) v.late++;
+    perWeek[wk] = (perWeek[wk] || 0) + 1; perMonth[mo] = (perMonth[mo] || 0) + 1;
+    if (w.pid) {
+      const p = prog[w.pid] = prog[w.pid] || { days: {}, weeks: {}, n: 0, max: 0 };
+      v.plan++; p.n++; p.weeks[wk] = (p.weeks[wk] || 0) + 1;
+      if (w.di != null) { p.days[w.di] = (p.days[w.di] || 0) + 1; p.max = Math.max(p.max, w.di + 1); }
+      const cur = P(w.pid);
+      if (cur && cur.week && w.di != null && cur.week[wdOf(w.start)] === w.di) v.ontime++;
+    }
+    w.items.forEach(it => {
+      const kind = exById(it.exId).kind;
+      it.sets.filter(isWork).forEach(x => {
+        used.add(it.exId);
+        if (kind === 'cardio') { v.cardio += x.r || 0; return; }
+        if (kind === 'wr') v.reps += x.r || 0;
+        day[it.exId] = Math.max(day[it.exId] || 0, x.w || 0);
+        topW[it.exId] = Math.max(topW[it.exId] || 0, x.w || 0);
+        topR[it.exId] = Math.max(topR[it.exId] || 0, x.r || 0);
+      });
+    });
     // рекорд — тренировка, где вес в упражнении превысил прежний максимум (первое выполнение не считается)
     Object.entries(day).forEach(([id, top]) => { if (best[id] && top > best[id]) v.prs++; best[id] = Math.max(best[id] || 0, top); });
   });
   v.variety = used.size;
+  v.weekmax = Math.max(0, ...Object.values(perWeek));
+  v.monthmax = Math.max(0, ...Object.values(perMonth));
+  v.progs = Object.keys(prog).length;
+  v.loyal = Math.max(0, ...Object.values(prog).map(p => p.n));
+  v.cycles = 0; v.fullweeks = 0;
+  Object.entries(prog).forEach(([pid, p]) => {
+    // число дней берём из самой программы, а если её уже удалили — по наибольшему выполненному дню
+    const cur = P(pid), days = cur ? cur.days.length : p.max;
+    if (!days) return;
+    v.cycles += Math.min(...Array.from({ length: days }, (_, i) => p.days[i] || 0));
+    v.fullweeks += Object.values(p.weeks).filter(c => c >= days).length;
+  });
   AWARDS.forEach(a => { if (a.ex) v[a.id] = (a.reps ? topR : topW)[a.ex] || 0; });
   return v;
 }
@@ -963,9 +1019,10 @@ function pgAwards() {
   return `<header class="top"><a class="ic" href="#/workouts">‹</a><h1>Достижения</h1></header>
   <section class="card"><b>Получено уровней: ${got} из ${all}</b>
     <div class="bar" style="margin-top:10px"><i style="width:${Math.round(got / all * 100)}%"></i></div></section>
-  ${list.map(a => {
+  ${list.map((a, i) => {
+    const head = i && list[i - 1].g === a.g ? '' : `<h2>${AWARD_GROUPS[a.g]}</h2>`;
     const next = a.tiers[a.level], from = a.level ? a.tiers[a.level - 1] : 0, val = +(+a.value).toFixed(1);
-    return `<section class="card award ${a.level ? '' : 'locked'}"><div class="aw-ic">${a.icon}</div><div class="grow">
+    return `${head}<section class="card award ${a.level ? '' : 'locked'}"><div class="aw-ic">${a.icon}</div><div class="grow">
       <div class="ex-head"><b>${a.title}</b><span class="muted small">уровень ${a.level} из ${a.tiers.length}</span></div>
       <div class="dots">${a.tiers.map((t, i) => `<i class="${i < a.level ? 'on' : ''}" title="${t}"></i>`).join('')}</div>
       <div class="bar"><i style="width:${next ? Math.max(0, Math.min(100, Math.round((a.value - from) / (next - from) * 100))) : 100}%"></i></div>
@@ -1123,7 +1180,11 @@ function playerDraw() {
     <button class="btn block ghost" style="margin:6px 0 0" data-a="sheetClose">Закончить</button>`;
 }
 function playerGo(k) {
-  if (k >= player.set.items.length) { clearInterval(player.timer); player = null; closeSheet(); beep(); return toast('Комплекс выполнен 👍'); }
+  if (k >= player.set.items.length) {
+    clearInterval(player.timer); player = null; closeSheet(); beep();
+    db.stretchDone = (db.stretchDone || 0) + 1; save();
+    return toast(checkAwards().length ? 'Комплекс выполнен · новое достижение 🏆' : 'Комплекс выполнен 👍');
+  }
   player.k = Math.max(0, k); player.left = STRETCH[player.set.items[player.k]][1];
   playerDraw();
 }
@@ -1650,7 +1711,7 @@ $('#photoInp').addEventListener('change', async e => {
 });
 
 // при первом запуске этой версии уровни достижений запоминаем молча, без поздравлений за старую историю
-if (!db.awards) checkAwards(true);
+if (!db.awards || AWARDS.some(a => !(a.id in db.awards))) checkAwards(true);
 syncReminders();
 if (navigator.storage && navigator.storage.persist) navigator.storage.persist();
 if (!NATIVE && 'serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js');
