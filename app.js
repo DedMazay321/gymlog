@@ -387,7 +387,7 @@ function calendar() {
   let cells = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'].map(d => `<div class="wd">${d}</div>`).join('') + '<div></div>'.repeat(off);
   for (let d = 1; d <= days; d++) {
     const today = y === now.getFullYear() && m === now.getMonth() && d === now.getDate() ? ' today' : '';
-    cells += map[d] ? `<a class="d has f${feel[d] || 0}${today}" href="#/workout/${map[d]}">${d}</a>` : `<div class="d${today}">${d}</div>`;
+    cells += `<button class="d${map[d] ? ' has f' + (feel[d] || 0) : ''}${today}" data-a="calDay" data-y="${y}" data-m="${m}" data-d="${d}">${d}</button>`;
   }
   return `<section class="card"><div class="cal-head">
     <button class="ic sm" data-a="calNav" data-v="-1">‹</button>
@@ -1336,6 +1336,30 @@ const actions = {
   restAdd: d => { if (rest) { rest.end += d.v * 1000; rest.total = Math.max(1, rest.total + +d.v); rest.fired = false; saveRest(); drawRest(); } },
   restStop: () => stopRest(),
   calNav: d => { cal.setMonth(cal.getMonth() + +d.v); render(); },
+  // Что было в выбранный день: тренировки с подходами, а если их нет — что стоит в расписании.
+  calDay(d) {
+    const from = new Date(+d.y, +d.m, +d.d).getTime(), to = new Date(+d.y, +d.m, +d.d + 1).getTime();
+    const list = db.workouts.filter(w => w.start >= from && w.start < to).sort((a, b) => a.start - b.start);
+    const title = new Date(from).toLocaleDateString('ru-RU', { weekday: 'long', day: 'numeric', month: 'long' }).replace(/^./, c => c.toUpperCase());
+    const p = activeProgram(), di = p && p.week ? p.week[wdOf(from)] : null, planned = di != null && p.days[di] ? p.days[di] : null;
+    const isToday = sameDay(from, Date.now()), future = from > Date.now();
+    const body = list.map(w => {
+      const st = wStats(w);
+      return `<section class="card"><div class="ex-head"><b>${w.feel ? FEEL[w.feel][1] + ' ' : ''}${esc(w.name)}</b>
+          <span class="muted small">${new Date(w.start).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}</span></div>
+        <div class="muted small">${w.end ? fmtDur(w.end - w.start) : 'идёт сейчас'} · ${st.sets} подх.${st.ton ? ` · ${n(Math.round(st.ton))} кг` : ''}${w.feel ? ' · ' + FEEL[w.feel][0] : ''}</div>
+        ${w.note ? `<div class="small" style="margin-top:6px">📝 ${esc(w.note)}</div>` : ''}
+        ${w.items.map(it => { const ex = exById(it.exId), sets = it.sets.filter(x => x.done);
+          return `<div class="day-ex"><b>${esc(ex.name)}</b><span class="muted">${sets.map(x => setTxt(x, ex.kind)).join(' · ') || '—'}</span></div>`; }).join('')}
+        <a class="btn sm block" style="margin:10px 0 0" href="#/workout/${w.id}">Открыть тренировку</a></section>`;
+    }).join('');
+    const plan = planned && !list.length ? `<section class="card"><div class="muted small">${future || isToday ? 'По расписанию' : 'По расписанию была запланирована'}</div>
+        <b>${esc(planned.name)}</b><div class="muted small">${planned.items.map(it => esc(exById(it.exId).name)).join(' · ')}</div>
+        ${isToday && !activeW() ? `<button class="btn sm primary block" style="margin:10px 0 0" data-a="start" data-p="${p.id}" data-d="${di}">▶ Начать тренировку</button>`
+          : `<a class="btn sm block" style="margin:10px 0 0" href="#/program/${p.id}/${di}">Посмотреть день программы</a>`}</section>` : '';
+    sheet(`<h3>${title}</h3>${body}${plan}${body || plan ? '' : `<div class="empty">${future ? 'На этот день ничего не запланировано' : 'В этот день тренировки не было'}</div>`}
+      <div class="row end"><button class="btn" data-a="sheetClose">Закрыть</button></div>`);
+  },
 
   /* тренировки */
   async startSheet() {
