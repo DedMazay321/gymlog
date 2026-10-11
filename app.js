@@ -376,17 +376,25 @@ let cal = new Date(); cal.setDate(1);
 function calendar() {
   const y = cal.getFullYear(), m = cal.getMonth(), now = new Date();
   const off = (new Date(y, m, 1).getDay() + 6) % 7, days = new Date(y, m + 1, 0).getDate(), map = {};
-  db.workouts.forEach(w => { const d = new Date(w.start); if (d.getFullYear() === y && d.getMonth() === m) map[d.getDate()] = map[d.getDate()] || w.id; });
+  // день красится по оценке тренировки; если тренировок в день несколько — по самой тяжёлой
+  const feel = {};
+  db.workouts.forEach(w => {
+    const d = new Date(w.start), k = d.getDate();
+    if (d.getFullYear() !== y || d.getMonth() !== m) return;
+    map[k] = map[k] || w.id;
+    if (w.end) feel[k] = Math.max(feel[k] || 0, w.feel || 0);
+  });
   let cells = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'].map(d => `<div class="wd">${d}</div>`).join('') + '<div></div>'.repeat(off);
   for (let d = 1; d <= days; d++) {
     const today = y === now.getFullYear() && m === now.getMonth() && d === now.getDate() ? ' today' : '';
-    cells += map[d] ? `<a class="d has${today}" href="#/workout/${map[d]}">${d}</a>` : `<div class="d${today}">${d}</div>`;
+    cells += map[d] ? `<a class="d has f${feel[d] || 0}${today}" href="#/workout/${map[d]}">${d}</a>` : `<div class="d${today}">${d}</div>`;
   }
   return `<section class="card"><div class="cal-head">
     <button class="ic sm" data-a="calNav" data-v="-1">‹</button>
     <b>${cal.toLocaleDateString('ru-RU', { month: 'long' })} ${y}</b>
     <button class="ic sm" data-a="calNav" data-v="1">›</button></div>
-    <div class="cal">${cells}</div></section>`;
+    <div class="cal">${cells}</div>
+    <div class="cal-leg"><span><i class="f1"></i>легко</span><span><i class="f2"></i>нормально</span><span><i class="f3"></i>тяжело</span><span><i class="f0"></i>без оценки</span></div></section>`;
 }
 // Одноразовая подсказка: показывается, пока пользователь не закроет её крестиком.
 function tip(key, text) {
@@ -435,9 +443,11 @@ function pgWorkouts() {
   <section class="card">${weekStrip()}
     <div class="muted small" style="margin-top:10px">${(() => { const c = list.filter(w => w.start >= weekStart(Date.now())).length, st = weekStreaks().cur;
       return `Тренировок на этой неделе: ${c}${st > 1 ? ` · серия ${st} нед. подряд 🔥` : ''}`; })()}</div></section>
+  <h2>Календарь</h2>
+  ${calendar()}
   ${waterCard()}
   ${list.length ? `<h2>Прошлая тренировка</h2>${workoutRow(list[0])}
-    <a class="btn block ghost" href="#/history">Вся история и календарь</a>` : tip('home', 'Когда закончите первую тренировку, здесь появятся история, графики прогресса и достижения.')}`;
+    <a class="btn block ghost" href="#/history">Вся история</a>` : tip('home', 'Когда закончите первую тренировку, здесь появятся история, графики прогресса и достижения.')}`;
 }
 function pgHistory() {
   const list = sortedW().filter(w => w.end);
