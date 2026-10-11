@@ -275,3 +275,26 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 .pgrid span { font-size: 11px; color: var(--muted); }
 .pfull { width: 100%; max-height: 62vh; object-fit: contain; border-radius: 14px; background: var(--card); }
 .chart .bar-mark { fill: var(--accent); }
+
+/* оценка подхода */
+.feel { grid-column: 2 / 5; display: flex; gap: 6px; margin-top: -2px; }
+.feel button, .feel span { flex: 1; padding: 5px 0; border-radius: 8px; background: var(--card2); color: var(--muted); font-size: 12px; text-align: center; }
+.feel span { flex: none; padding: 3px 10px; }
+.feel .on { font-weight: 600; color: #fff; }
+.feel .on.f1 { background: var(--ok); }
+.feel .on.f2 { background: #5b7fa6; }
+.feel .on.f3 { background: var(--danger); }
+
+/* расписание */
+.week { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; }
+.week button { display: grid; gap: 3px; padding: 8px 0; border-radius: 10px; background: var(--card2); text-align: center; }
+.week span { font-size: 12px; color: var(--muted); }
+.week b { font-size: 14px; color: var(--muted); }
+.week .on { background: var(--accent); }
+.week .on span, .week .on b { color: var(--on-accent); }
+
+/* питание и растяжка */
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 10px; }
+a.li { color: inherit; }
+.sp-time { font-size: 54px; font-weight: 700; text-align: center; font-variant-numeric: tabular-nums; margin: 4px 0; }
+.sheet .demo { margin-bottom: 0; }

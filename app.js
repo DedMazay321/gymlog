@@ -106,11 +106,19 @@ function suggest(it, prev) {
   if (ex.kind !== 'wr' || !work.length) return null;
   const target = it.planR || work[0].r || 0;
   const ok = work.every(s => (s.r || 0) >= target), top = Math.max(...work.map(s => s.w || 0));
-  if (!top) return ok ? { dr: 1, text: `Сегодня попробуйте ${target + 1} повт. — в прошлый раз план выполнен` } : { text: `Сегодня цель — ${target} повт. во всех подходах` };
-  const step = ex.equip === 'Гантели' || ex.equip === 'Гиря' ? 1 : 2.5;
-  return ok ? { dw: step, text: `Сегодня: ${n(top + step)} кг — в прошлый раз план выполнен, прибавьте ${n(step)} кг` }
-    : { text: `Сегодня: ${n(top)} кг — сначала доберите ${target} повт. во всех подходах` };
+  // оценки подходов (f: 1 — легко, 3 — тяжело): тяжёлый вес сначала закрепляем, лёгкий прибавляем смелее
+  const hard = work.some(s => s.f === 3), easy = work.every(s => s.f === 1);
+  if (!top) {
+    if (!ok) return { text: `Сегодня цель — ${target} повт. во всех подходах` };
+    if (hard) return { text: `Сегодня снова ${target} повт. — в прошлый раз было тяжело, закрепите результат` };
+    return { dr: easy ? 2 : 1, text: `Сегодня попробуйте ${target + (easy ? 2 : 1)} повт. — в прошлый раз план выполнен${easy ? ' легко' : ''}` };
+  }
+  const base = ex.equip === 'Гантели' || ex.equip === 'Гиря' ? 1 : 2.5, step = easy ? base * 2 : base;
+  if (!ok) return { text: `Сегодня: ${n(top)} кг — сначала доберите ${target} повт. во всех подходах` };
+  if (hard) return { text: `Сегодня: ${n(top)} кг — план выполнен, но было тяжело: закрепите этот вес` };
+  return { dw: step, text: `Сегодня: ${n(top + step)} кг — в прошлый раз план выполнен${easy ? ' легко' : ''}, прибавьте ${n(step)} кг` };
 }
+const FEEL = { 1: ['легко', '😌'], 2: ['нормально', '🙂'], 3: ['тяжело', '😤'] };
 
 // Изменение показателя относительно прошлого результата: ▲ рост, ▼ падение, = без изменений.
 function dl(d, unit = '') {
@@ -387,7 +395,8 @@ function pgWorkouts() {
   return `<header class="top"><h1>Тренировки</h1></header>
   ${act ? `<a class="card link active" href="#/workout/${act.id}"><b>Идёт тренировка: ${esc(act.name)}</b>
       <div class="muted small">Прошло <span data-elapsed="${act.start}">${fmtDur(Date.now() - act.start)}</span> · нажмите, чтобы продолжить</div></a>`
-    : `<button class="btn block primary" data-a="startSheet">Начать тренировку</button>`}
+    : `${planCard()}<button class="btn block ${nextPlan() ? '' : 'primary'}" data-a="startSheet">${nextPlan() ? 'Другая тренировка' : 'Начать тренировку'}</button>`}
+  ${waterCard()}
   <div class="tiles">
     <div class="tile"><b>${list.filter(w => w.start >= weekStart).length}</b><span>за неделю</span></div>
     <div class="tile"><b>${list.filter(w => w.start >= monthStart).length}</b><span>за месяц</span></div>
@@ -398,7 +407,7 @@ function pgWorkouts() {
   <h2>История</h2>
   ${list.length ? list.map(w => {
     const s = wStats(w);
-    return `<a class="card link" href="#/workout/${w.id}"><div class="ex-head"><b>${esc(w.name)}</b><span class="muted small">${fmtDate(w.start)}</span></div>
+    return `<a class="card link" href="#/workout/${w.id}"><div class="ex-head"><b>${w.feel ? FEEL[w.feel][1] + ' ' : ''}${esc(w.name)}</b><span class="muted small">${fmtDate(w.start)}</span></div>
       <div class="muted small">${fmtDur(w.end - w.start)} · ${s.ex} упр. · ${s.sets} подх.${s.ton ? ` · ${n(Math.round(s.ton))} кг` : ''}</div>
       <div class="small" style="margin-top:6px">${w.items.map(it => esc(exById(it.exId).name)).join(', ')}</div></a>`;
   }).join('') : `<div class="empty">Завершённых тренировок пока нет.<br>Начните первую — она появится здесь.</div>`}`;
@@ -431,7 +440,9 @@ function itemCard(w, it, i) {
         <button class="chk" data-a="setToggle" ${d} data-s="${j}" aria-label="Подход выполнен">✓</button>
         ${s.done && (prev[j] || (best && isWork(s) && s.w > best)) ? `<div class="delta">
           ${best && isWork(s) && s.w > best ? `<span class="up">🏆 рекорд</span>` : ''}
-          ${prev[j] ? `${s.w || prev[j].w ? dl((s.w || 0) - (prev[j].w || 0), k.a) : ''} ${dl((s.r || 0) - (prev[j].r || 0), k.b)}` : ''}</div>` : ''}</div>`;
+          ${prev[j] ? `${s.w || prev[j].w ? dl((s.w || 0) - (prev[j].w || 0), k.a) : ''} ${dl((s.r || 0) - (prev[j].r || 0), k.b)}` : ''}</div>` : ''}
+        ${s.done && !warm ? `<div class="feel">${w.end ? (s.f ? `<span class="on f${s.f}">${FEEL[s.f][0]}</span>` : '')
+          : [1, 2, 3].map(v => `<button class="${s.f === v ? 'on f' + v : ''}" data-a="setFeel" ${d} data-s="${j}" data-v="${v}">${FEEL[v][0]}</button>`).join('')}</div>` : ''}</div>`;
     }).join('')}
     <div class="row"><button class="btn sm" data-a="setAdd" ${d}>+ Подход</button>
       ${it.sets.length ? `<button class="btn sm ghost" data-a="setDel" ${d}>− Подход</button>` : ''}</div>
@@ -513,7 +524,14 @@ function pgProgram(id, day) {
   return `<header class="top"><a class="ic" href="#/programs">‹</a><h1 data-a="pRename" data-p="${p.id}">${esc(p.name)}</h1>
     <button class="ic" data-a="pMenu" data-p="${p.id}">⋮</button></header>
   ${p.note ? `<div class="note">${esc(p.note)}</div>` : ''}
-  ${p.days.length ? `<div class="tiles">
+  ${p.days.length ? `<h2>Расписание</h2><section class="card">
+    <div class="week">${WD.map((name, i) => { const di = (p.week || {})[i], on = di != null && p.days[di];
+      return `<button class="${on ? 'on' : ''}" data-a="weekSet" data-p="${p.id}" data-wd="${i}"><span>${name}</span><b>${on ? 'Д' + (di + 1) : '—'}</b></button>`; }).join('')}</div>
+    <div class="muted small" style="margin-top:8px">Нажмите на день недели и выберите тренировку. ${db.activeProgram === p.id
+      ? 'Это текущая программа: ближайшая тренировка показывается на главном экране.' : ''}</div>
+    ${db.activeProgram === p.id ? '' : `<button class="btn sm" style="margin-top:10px" data-a="pActive" data-p="${p.id}">Сделать текущей программой</button>`}
+  </section>
+  <div class="tiles">
     <div class="tile"><b>${p.days.length}</b><span>дней в неделю</span></div>
     <div class="tile"><b>${stats.reduce((a, s) => a + s.sets, 0)}</b><span>подходов в неделю</span></div>
     <div class="tile"><b>≈ ${avg}</b><span>минут на тренировку</span></div>
@@ -721,6 +739,12 @@ function pgMeasures() {
 function pgMore() {
   const s = db.settings, opt = (v, l, cur) => `<option value="${v}" ${v === cur ? 'selected' : ''}>${l}</option>`;
   return `<header class="top"><h1>Ещё</h1></header>
+  <section class="card">
+    <a class="li" href="#/health"><span>🥗 Питание, вода и сон</span><span class="muted">›</span></a>
+    <a class="li" href="#/stretch"><span>🧘 Разминка и растяжка</span><span class="muted">›</span></a>
+    <a class="li" href="#/stats"><span>📊 Сводка и графики</span><span class="muted">›</span></a>
+    <a class="li" href="#/awards"><span>🏆 Достижения</span><span class="muted">›</span></a>
+  </section>
   <h2>Настройки</h2>
   <section class="card">
     <label class="switch"><span>Отдых между подходами</span><select data-in="setting" data-k="rest">
@@ -728,6 +752,9 @@ function pgMore() {
     <label class="switch"><span>Звук по окончании отдыха</span><input type="checkbox" data-in="setting" data-k="sound" ${s.sound ? 'checked' : ''}></label>
     <label class="switch"><span>Вибрация</span><input type="checkbox" data-in="setting" data-k="vibro" ${s.vibro ? 'checked' : ''}></label>
     <label class="switch"><span>Не гасить экран во время тренировки</span><input type="checkbox" data-in="setting" data-k="keepOn" ${s.keepOn !== false ? 'checked' : ''}></label>
+    ${window.Android && Android.setReminders ? `<label class="switch"><span>Напоминать о тренировках по расписанию</span><input type="checkbox" data-in="setting" data-k="remOn" ${s.remOn ? 'checked' : ''}></label>
+    <label class="switch"><span>Время напоминания</span><input type="time" class="inp" style="width:auto" data-in="setting" data-k="remTime" value="${esc(s.remTime || '18:00')}"></label>`
+      : `<div class="muted small" style="padding:8px 0">Напоминания о тренировках работают в приложении для Android версии 1.9 и новее.</div>`}
     <label class="switch"><span>Тема</span><select data-in="setting" data-k="theme">
       ${opt('dark', 'Тёмная', s.theme)}${opt('light', 'Светлая', s.theme)}${opt('auto', 'Как в системе', s.theme)}</select></label>
   </section>
@@ -946,6 +973,168 @@ function pgAwards() {
   }).join('')}`;
 }
 
+/* ---------- расписание и следующая тренировка ---------- */
+const WD = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+const WD_WHEN = ['в понедельник', 'во вторник', 'в среду', 'в четверг', 'в пятницу', 'в субботу', 'в воскресенье'];
+const wdOf = ts => (new Date(ts).getDay() + 6) % 7;
+const sameDay = (a, b) => isoDay(a) === isoDay(b);
+const activeProgram = () => P(db.activeProgram) || null;
+// Ближайшая тренировка текущей программы: по расписанию, а если его нет — следующий день по кругу.
+function nextPlan() {
+  const p = activeProgram();
+  if (!p || !p.days.length) return null;
+  const doneToday = db.workouts.some(w => w.end && w.pid === p.id && sameDay(w.start, Date.now()));
+  const week = p.week || {};
+  if (Object.values(week).some(v => v != null && p.days[v])) {
+    for (let k = doneToday ? 1 : 0; k <= 7; k++) {
+      const wd = (wdOf(Date.now()) + k) % 7, di = week[wd];
+      if (di != null && p.days[di]) return { p, di, today: k === 0, doneToday, when: k === 0 ? 'Сегодня по расписанию' : k === 1 ? 'Завтра' : 'Следующая — ' + WD_WHEN[wd] };
+    }
+    return null;
+  }
+  const last = sortedW().find(w => w.end && w.pid === p.id && w.di != null);
+  return { p, di: last ? (last.di + 1) % p.days.length : 0, today: !doneToday, doneToday, when: 'Следующая по программе' };
+}
+function planCard() {
+  const pl = nextPlan();
+  if (!pl) return '';
+  const d = pl.p.days[pl.di], st = dayStats(d), two = sortedW().filter(w => w.end).slice(0, 2);
+  return `<section class="card ${pl.today ? 'active' : ''}">
+    <div class="muted small">${pl.when}${pl.doneToday ? ' · сегодня тренировка уже была ✓' : ''}</div>
+    <a class="day-row" href="#/program/${pl.p.id}/${pl.di}">${mapHtml(...dayMuscles(d.items), true)}<div><b>${esc(d.name)}</b>
+      <div class="muted small">${esc(pl.p.name)}</div>
+      <div class="muted small">${d.items.length} упр. · ${st.sets} подх. · ≈ ${st.min} мин</div></div></a>
+    ${two.length === 2 && two.every(w => w.feel === 3) ? `<div class="hint">Две последние тренировки были тяжёлыми — возможно, стоит добавить день отдыха или снизить веса.</div>` : ''}
+    <div class="row"><button class="btn sm primary" data-a="start" data-p="${pl.p.id}" data-d="${pl.di}">▶ Начать</button>
+      <a class="btn sm" href="#/program/${pl.p.id}/${pl.di}">Подробнее</a></div></section>`;
+}
+// Напоминания ставит Android-оболочка: передаём ей время ближайших тренировок на неделю вперёд.
+function syncReminders() {
+  if (!(window.Android && Android.setReminders)) return;
+  const s = db.settings, list = [], p = activeProgram();
+  if (s.remOn && p && p.week) {
+    const [hh, mm] = (s.remTime || '18:00').split(':').map(Number), now = new Date();
+    for (let k = 0; k < 7; k++) {
+      const at = new Date(now.getFullYear(), now.getMonth(), now.getDate() + k, hh, mm).getTime(), di = p.week[wdOf(at)];
+      if (di == null || !p.days[di] || at <= Date.now()) continue;
+      if (k === 0 && db.workouts.some(w => w.pid === p.id && sameDay(w.start, Date.now()))) continue;
+      list.push({ at, text: p.days[di].name });
+    }
+  }
+  Android.setReminders(JSON.stringify(list), !!s.remOn);
+}
+
+/* ---------- питание, вода и сон ---------- */
+const ACTIVITY = [[1.2, 'Сидячая работа, без тренировок'], [1.375, '1–3 тренировки в неделю'], [1.55, '3–5 тренировок в неделю'], [1.725, '6–7 тренировок в неделю'], [1.9, 'Тяжёлый физический труд']];
+function profile() {
+  const lastW = db.measures.filter(m => m.type === 'weight').sort((a, b) => b.date - a.date)[0];
+  return { sex: 'm', age: 30, height: 175, weight: lastW ? lastW.value : 75, act: 1.55, goal: 'keep', ...(db.profile || {}) };
+}
+// Формула Миффлина — Сан Жеора; белок и жиры — от веса тела, углеводы — остаток калорий.
+function nutrition() {
+  const p = profile(), bmr = 10 * p.weight + 6.25 * p.height - 5 * p.age + (p.sex === 'f' ? -161 : 5), tdee = bmr * p.act;
+  const kcal = Math.round(tdee * (p.goal === 'loss' ? .85 : p.goal === 'gain' ? 1.1 : 1) / 10) * 10;
+  const protein = Math.round(p.weight * (p.goal === 'loss' ? 2 : p.goal === 'gain' ? 1.8 : 1.6)), fat = Math.round(p.weight * .9);
+  return { kcal, tdee: Math.round(tdee / 10) * 10, protein, fat, carbs: Math.max(0, Math.round((kcal - protein * 4 - fat * 9) / 4)), water: Math.round(p.weight * 30 / 50) * 50 };
+}
+function nutriHtml() {
+  const x = nutrition(), p = profile();
+  return `<div class="tiles two">
+    <div class="tile"><b>${x.kcal}</b><span>ккал в день</span></div>
+    <div class="tile"><b>${x.protein} г</b><span>белка</span></div>
+    <div class="tile"><b>${x.fat} г</b><span>жиров</span></div>
+    <div class="tile"><b>${x.carbs} г</b><span>углеводов</span></div></div>
+  <div class="muted small">Расход при вашей активности — около ${x.tdee} ккал. ${p.goal === 'loss' ? 'Для похудения заложен дефицит 15%.' : p.goal === 'gain' ? 'Для набора заложен избыток 10%.' : 'Столько нужно, чтобы вес не менялся.'}
+    Это ориентир по формуле, а не назначение врача: смотрите на динамику веса за 2–3 недели и поправляйте калории на 100–200.</div>`;
+}
+const today = () => isoDay(Date.now());
+const waterGoal = () => nutrition().water;
+const litres = ml => n(+(ml / 1000).toFixed(2)) + ' л';
+function waterCard(full) {
+  const ml = (db.water || {})[today()] || 0, goal = waterGoal();
+  if (!full && db.settings.waterHome === false) return '';
+  return `<section class="card"><div class="ex-head"><b>💧 Вода: ${litres(ml)} из ${litres(goal)}</b>
+      ${full ? '' : `<a class="muted small" href="#/health">подробнее</a>`}</div>
+    <div class="bar" style="margin:10px 0"><i style="width:${Math.min(100, Math.round(ml / goal * 100))}%"></i></div>
+    <div class="row">${[200, 250, 500].map(v => `<button class="btn sm" data-a="waterAdd" data-v="${v}">+${v} мл</button>`).join('')}
+      ${ml ? `<button class="btn sm ghost" data-a="waterAdd" data-v="-250">− 250</button>` : ''}</div></section>`;
+}
+function lastDays(count, src, scale = 1) {
+  return Array.from({ length: count }, (_, i) => {
+    const d = new Date(); d.setDate(d.getDate() - (count - 1 - i));
+    const short = d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
+    return { v: +(((src || {})[isoDay(d.getTime())] || 0) / scale).toFixed(2), short, label: d.toLocaleDateString('ru-RU', { weekday: 'short', day: 'numeric', month: 'short' }) };
+  });
+}
+function pgHealth() {
+  const p = profile(), sleep = lastDays(14, db.sleep), slept = sleep.filter(s => s.v), water = lastDays(14, db.water, 1000);
+  const sel = (k, opts) => `<select data-in="prof" data-k="${k}">${opts.map(([v, l]) => `<option value="${v}" ${String(p[k]) === String(v) ? 'selected' : ''}>${l}</option>`).join('')}</select>`;
+  const inp = (k, label) => `<label class="field"><span>${label}</span><input type="text" inputmode="decimal" data-in="prof" data-k="${k}" value="${p[k]}"></label>`;
+  return `<header class="top"><a class="ic" href="#/more">‹</a><h1>Питание, вода и сон</h1></header>
+  <h2>Калории и белок</h2>
+  <section class="card">
+    <div class="grid2"><label class="field"><span>Пол</span>${sel('sex', [['m', 'Мужской'], ['f', 'Женский']])}</label>${inp('age', 'Возраст, лет')}
+      ${inp('height', 'Рост, см')}${inp('weight', 'Вес, кг')}</div>
+    <label class="field"><span>Активность</span>${sel('act', ACTIVITY)}</label>
+    <label class="field"><span>Цель</span>${sel('goal', [['loss', 'Похудение'], ['keep', 'Поддержание веса'], ['gain', 'Набор мышечной массы']])}</label>
+    <div id="nutri">${nutriHtml()}</div>
+  </section>
+  <h2>Вода</h2>
+  <div id="waterbox">${waterCard(true)}</div>
+  <section class="card">${water.some(x => x.v) ? bars('hw', water, 'л') : `<div class="empty small">Отмечайте выпитую воду — здесь появится график за 14 дней</div>`}
+    <div class="muted small" style="margin-top:6px">Норма — около 30 мл на килограмм веса; в дни тренировок и в жару нужно больше.</div>
+    <label class="switch"><span>Показывать воду на главном экране</span><input type="checkbox" data-in="setting" data-k="waterHome" ${db.settings.waterHome !== false ? 'checked' : ''}></label></section>
+  <h2>Сон</h2>
+  <section class="card">${slept.length ? `${bars('hs', sleep, 'ч')}
+    <div class="muted small" style="margin-top:6px">В среднем ${n(+(slept.reduce((a, s) => a + s.v, 0) / slept.length).toFixed(1))} ч за ${slept.length} записанных ночей.</div>`
+    : `<div class="empty small">Записывайте, сколько спали, — здесь появится график за 14 дней</div>`}
+    <button class="btn block primary" style="margin:12px 0 0" data-a="sleepAdd">Записать сон</button>
+    <div class="muted small" style="margin-top:8px">Для восстановления после тренировок обычно нужно 7–9 часов.</div></section>`;
+}
+
+/* ---------- разминка и растяжка ---------- */
+const stretchTime = set => set.items.reduce((a, i) => a + STRETCH[i][1], 0);
+const stretchDemo = i => `<div class="demo"><img src="img/s${i}_0.jpg" alt=""><img class="f2" src="img/s${i}_1.jpg" alt=""></div>`;
+function pgStretch(id) {
+  const set = STRETCH_SETS.find(s => s.id === id);
+  if (!set) return `<header class="top"><a class="ic" href="#/more">‹</a><h1>Разминка и растяжка</h1></header>
+    ${STRETCH_SETS.map(s => `<a class="card link award" href="#/stretch/${s.id}"><div class="aw-ic">${s.icon}</div><div class="grow"><b>${s.name}</b>
+      <div class="muted small">${s.about}</div><div class="muted small">${s.items.length} движений · ${Math.round(stretchTime(s) / 60)} мин</div></div></a>`).join('')}
+    <p class="muted small">Перед тренировкой — динамическая разминка, после — спокойная растяжка без боли и рывков: тянитесь до лёгкого натяжения и дышите ровно.</p>`;
+  return `<header class="top"><a class="ic" href="#/stretch">‹</a><h1>${set.name}</h1></header>
+  <div class="sub">${set.items.length} движений · ${Math.round(stretchTime(set) / 60)} мин</div>
+  <button class="btn block primary" data-a="stretchPlay" data-id="${set.id}">▶ Начать с таймером</button>
+  ${set.items.map((i, k) => `<section class="card plan"><img class="thumb" src="img/s${i}_0.jpg" loading="lazy" alt="" data-a="stretchShow" data-i="${i}">
+    <div class="grow"><b>${k + 1}. ${STRETCH[i][0]}</b><div class="small">${STRETCH[i][1]} сек</div>
+    <div class="muted small">${STRETCH[i][2]}</div></div></section>`).join('')}`;
+}
+// Проигрыватель комплекса: показывает движение и отсчитывает время, затем сам переходит к следующему.
+let player = null;
+function playerDraw() {
+  const i = player.set.items[player.k], [name, secs, text] = STRETCH[i];
+  $('.sheet').innerHTML = `<div class="muted small">${player.set.name} · ${player.k + 1} из ${player.set.items.length}</div>
+    <h3 style="margin:4px 0 10px">${name}</h3>${stretchDemo(i)}
+    <div class="sp-time" id="sp-time">${player.left}</div>
+    <div class="bar"><i id="sp-bar" style="width:${Math.round((1 - player.left / secs) * 100)}%"></i></div>
+    <div class="muted small" style="margin:10px 0">${text}</div>
+    <div class="row two"><button class="btn" data-a="stretchStep" data-v="-1">‹ Назад</button>
+      <button class="btn" data-a="stretchPause">${player.paused ? '▶ Продолжить' : '❚❚ Пауза'}</button>
+      <button class="btn" data-a="stretchStep" data-v="1">Далее ›</button></div>
+    <button class="btn block ghost" style="margin:6px 0 0" data-a="sheetClose">Закончить</button>`;
+}
+function playerGo(k) {
+  if (k >= player.set.items.length) { clearInterval(player.timer); player = null; closeSheet(); beep(); return toast('Комплекс выполнен 👍'); }
+  player.k = Math.max(0, k); player.left = STRETCH[player.set.items[player.k]][1];
+  playerDraw();
+}
+function playerTick() {
+  if (!player || !$('#sp-time')) { if (player) clearInterval(player.timer); player = null; return; }   // шторку закрыли
+  if (player.paused) return;
+  if (--player.left <= 0) { beep(); return playerGo(player.k + 1); }
+  $('#sp-time').textContent = player.left;
+  $('#sp-bar').style.width = Math.round((1 - player.left / STRETCH[player.set.items[player.k]][1]) * 100) + '%';
+}
+
 /* ---------- версия и обновление ---------- */
 // NATIVE — приложение запущено внутри Android-оболочки, которая умеет скачивать новые файлы с сервера обновлений.
 // Оболочка для Windows (WebView2) общается сообщениями — приводим её к тому же интерфейсу, что и Android.
@@ -970,8 +1159,8 @@ window.onNativeUpdate = r => {
 };
 
 /* ---------- маршруты ---------- */
-const pages = { workouts: pgWorkouts, workout: pgWorkout, programs: pgPrograms, program: pgProgram, exercises: pgExercises, exercise: pgExercise, measures: pgMeasures, more: pgMore, stats: pgStats, awards: pgAwards };
-const tabOf = { workout: 'workouts', program: 'programs', exercise: 'exercises', stats: 'workouts', awards: 'workouts' };
+const pages = { workouts: pgWorkouts, workout: pgWorkout, programs: pgPrograms, program: pgProgram, exercises: pgExercises, exercise: pgExercise, measures: pgMeasures, more: pgMore, stats: pgStats, awards: pgAwards, health: pgHealth, stretch: pgStretch };
+const tabOf = { workout: 'workouts', program: 'programs', exercise: 'exercises', stats: 'workouts', awards: 'workouts', health: 'more', stretch: 'more' };
 function render() {
   const [page, id, sub] = (location.hash.slice(2) || 'workouts').split('/');
   const fn = pages[page] || pgWorkouts;
@@ -985,10 +1174,12 @@ const go = h => { if (location.hash === h) render(); else location.hash = h; };
 window.addEventListener('hashchange', () => { closeSheet(); render(); window.scrollTo(0, 0); });
 
 /* ---------- действия ---------- */
-function newWorkout(name, items) {
+// link — из какой программы и какого её дня тренировка (pid, di): по ним считается «следующая по программе»
+function newWorkout(name, items, link = {}) {
   const act = activeW();
   if (act) { toast('Сначала завершите текущую тренировку'); return go('#/workout/' + act.id); }
-  const w = { id: uid(), start: Date.now(), end: null, name, note: '', items };
+  const w = { id: uid(), start: Date.now(), end: null, name, note: '', items, ...link };
+  if (link.pid) db.activeProgram = link.pid;
   db.workouts.push(w); save(); go('#/workout/' + w.id);
 }
 const emptySets = c => Array.from({ length: c }, () => ({ w: null, r: null, done: false }));
@@ -1027,7 +1218,7 @@ const actions = {
   },
   start(d) {
     const p = P(d.p), day = p.days[d.d];
-    newWorkout(day.name, day.items.map(pi => ({ exId: pi.exId, rest: pi.rest || null, planR: pi.reps, ss: !!pi.ss, note: '', sets: emptySets(pi.sets) })));
+    newWorkout(day.name, day.items.map(pi => ({ exId: pi.exId, rest: pi.rest || null, planR: pi.reps, ss: !!pi.ss, note: '', sets: emptySets(pi.sets) })), { pid: p.id, di: +d.d });
   },
   async wRename(d) {
     const w = W(d.w), r = await form('Название тренировки', [{ name: 'name', label: 'Название', value: w.name }]);
@@ -1075,6 +1266,10 @@ const actions = {
     w.items.forEach(it => it.sets = it.sets.filter(s => s.done));
     w.items = w.items.filter(it => it.sets.length);
     w.end = Date.now(); stopRest(); save();
+    render();
+    const feel = await menu('Как прошла тренировка?', [[1, '😌 Легко — остался запас сил'], [2, '🙂 Нормально — в самый раз'], [3, '😤 Тяжело — на пределе']]);
+    if (feel) w.feel = +feel;
+    save(); syncReminders();
     const news = checkAwards();
     render();
     if (news.length) {
@@ -1086,7 +1281,8 @@ const actions = {
   },
   wRepeat(d) {
     const w = W(d.w);
-    newWorkout(w.name, w.items.map(it => ({ exId: it.exId, rest: it.rest || null, planR: it.planR, ss: !!it.ss, note: '', sets: emptySets(it.sets.length || 1) })));
+    newWorkout(w.name, w.items.map(it => ({ exId: it.exId, rest: it.rest || null, planR: it.planR, ss: !!it.ss, note: '', sets: emptySets(it.sets.length || 1) })),
+      w.pid && P(w.pid) ? { pid: w.pid, di: w.di } : {});
   },
   async itMenu(d) {
     const w = W(d.w), i = +d.x, it = w.items[i];
@@ -1125,6 +1321,11 @@ const actions = {
     save(); render();
   },
   setDel(d) { W(d.w).items[d.x].sets.pop(); save(); render(); },
+  setFeel(d) {
+    const s = W(d.w).items[d.x].sets[d.s];
+    if (s.f === +d.v) delete s.f; else s.f = +d.v;
+    save(); render();
+  },
   async setType(d) {
     const it = W(d.w).items[d.x], s = it.sets[d.s];
     const v = await menu('Тип подхода', [['', 'Рабочий'], ['w', 'Разминочный — не идёт в статистику'], ['f', 'До отказа'],
@@ -1185,8 +1386,10 @@ const actions = {
     if (r && r.name) { p.name = r.name; save(); render(); }
   },
   async pMenu(d) {
-    const v = await menu(P(d.p).name, [['rename', 'Переименовать'], ['del', 'Удалить программу', 1]]);
+    const v = await menu(P(d.p).name, [['rename', 'Переименовать'], db.activeProgram === d.p ? null : ['active', 'Сделать текущей программой'],
+      ['del', 'Удалить программу', 1]]);
     if (v === 'rename') return actions.pRename(d);
+    if (v === 'active') return actions.pActive(d);
     if (v === 'del' && await confirmDlg('Удалить программу? История тренировок сохранится.')) {
       db.programs = db.programs.filter(p => p.id !== d.p); save(); go('#/programs');
     }
@@ -1202,11 +1405,13 @@ const actions = {
       const r = await form('Название дня', [{ name: 'name', label: 'Название', value: day.name }]);
       if (r && r.name) day.name = r.name;
     }
-    if (v === 'up') move(p.days, i, -1);
-    if (v === 'down') move(p.days, i, 1);
-    if (v === 'del') p.days.splice(i, 1);
+    // расписание хранит номера дней — при перестановке и удалении номера нужно поправить
+    const remap = fn => { if (p.week) Object.keys(p.week).forEach(k => { if (p.week[k] != null) p.week[k] = fn(p.week[k]); }); };
+    if (v === 'up' && i > 0) { move(p.days, i, -1); remap(x => x === i ? i - 1 : x === i - 1 ? i : x); }
+    if (v === 'down' && i < p.days.length - 1) { move(p.days, i, 1); remap(x => x === i ? i + 1 : x === i + 1 ? i : x); }
+    if (v === 'del') { p.days.splice(i, 1); remap(x => x === i ? null : x > i ? x - 1 : x); }
     // порядок дней изменился — со страницы дня возвращаемся к обзору программы
-    if (v === 'del' || v === 'up' || v === 'down') { save(); return go('#/program/' + p.id); }
+    if (v === 'del' || v === 'up' || v === 'down') { save(); syncReminders(); return go('#/program/' + p.id); }
     if (v) { save(); render(); }
   },
   async piAdd(d) {
@@ -1275,6 +1480,47 @@ const actions = {
     sheet(`<h3>${esc(exById(d.id).name)}</h3>${demo(d.id)}${muscleMap(exById(d.id))}${techHtml(exById(d.id))}
       <div class="row end"><a class="btn ghost" href="#/exercise/${d.id}">Статистика</a><button class="btn" data-a="sheetClose">Закрыть</button></div>`);
   },
+
+  /* расписание */
+  async weekSet(d) {
+    const p = P(d.p), wd = +d.wd;
+    const v = await menu(WD_WHEN[wd].replace(/^во? /, '').replace(/^./, c => c.toUpperCase()), [['', 'Отдых'], ...p.days.map((day, i) => [i, day.name])]);
+    if (v == null) return;
+    p.week = { ...(p.week || {}), [wd]: v === '' ? null : +v };
+    if (!activeProgram()) db.activeProgram = p.id;
+    save(); syncReminders(); render();
+  },
+  pActive(d) { db.activeProgram = d.p; save(); syncReminders(); render(); toast('Программа выбрана текущей'); },
+
+  /* вода, сон, растяжка */
+  waterAdd(d) {
+    db.water = db.water || {};
+    db.water[today()] = Math.max(0, (db.water[today()] || 0) + +d.v);
+    save(); render();
+  },
+  async sleepAdd() {
+    const r = await form('Сон', [{ name: 'hours', label: 'Сколько часов спали', type: 'number', value: '' },
+      { name: 'date', label: 'Утро какого дня', type: 'date', value: today() }]);
+    if (!r) return;
+    const h = num(r.hours);
+    if (h == null || h < 0 || h > 24) return toast('Введите число часов от 0 до 24');
+    db.sleep = db.sleep || {};
+    db.sleep[r.date || today()] = h;
+    save(); render();
+  },
+  stretchShow(d) {
+    const [name, secs, text] = STRETCH[d.i];
+    sheet(`<h3>${name}</h3>${stretchDemo(d.i)}<div class="small" style="margin:10px 0">${text}</div>
+      <div class="row end"><span class="muted small" style="flex:1">${secs} сек</span><button class="btn" data-a="sheetClose">Закрыть</button></div>`);
+  },
+  stretchPlay(d) {
+    audioInit();
+    sheet('');
+    player = { set: STRETCH_SETS.find(x => x.id === d.id), k: 0, left: 0, paused: false, timer: setInterval(playerTick, 1000) };
+    playerGo(0);
+  },
+  stretchStep(d) { if (player) playerGo(player.k + +d.v); },
+  stretchPause() { if (player) { player.paused = !player.paused; playerDraw(); } },
 
   /* замеры */
   mType(d) { mType = d.v; render(); },
@@ -1349,6 +1595,13 @@ const actions = {
 };
 
 const inputs = {
+  prof(d, el) {
+    const v = d.k === 'sex' || d.k === 'goal' ? el.value : num(el.value);
+    if (v == null || v === 0) return;
+    db.profile = { ...profile(), [d.k]: v };
+    save();
+    $('#nutri').innerHTML = nutriHtml(); $('#waterbox').innerHTML = waterCard(true);
+  },
   setVal(d, el) { W(d.w).items[d.x].sets[d.s][d.f] = num(el.value); save(); },
   exSearch(d, el) {
     const f = picker ? pf : ef;
@@ -1357,7 +1610,7 @@ const inputs = {
   },
   setting(d, el) {
     db.settings[d.k] = el.type === 'checkbox' ? el.checked : d.k === 'rest' ? +el.value : el.value;
-    save(); document.documentElement.dataset.theme = db.settings.theme; syncWake();
+    save(); document.documentElement.dataset.theme = db.settings.theme; syncWake(); syncReminders();
   },
 };
 
@@ -1398,6 +1651,7 @@ $('#photoInp').addEventListener('change', async e => {
 
 // при первом запуске этой версии уровни достижений запоминаем молча, без поздравлений за старую историю
 if (!db.awards) checkAwards(true);
+syncReminders();
 if (navigator.storage && navigator.storage.persist) navigator.storage.persist();
 if (!NATIVE && 'serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js');
 
