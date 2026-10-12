@@ -338,6 +338,7 @@ function buildProgram({ sex, goal, days, level, split = 'auto', place = 'gym' })
   return {
     name: `${g.name} · ${SPLIT_NAMES[split] ? SPLIT_NAMES[split] + ' · ' : ''}${days} дн. · ${place === 'gym' ? '' : 'дом · '}${sex === 'f' ? 'жен.' : 'муж.'}`,
     note: g.tip + (PLACE_TIPS[place] || ''),
+    sex,
     days: splitDays(sex, days, split, place).map((key, di) => {
       const [title, spec] = blockOf(key);
       return { name: `День ${di + 1} · ${title}`, items: dayItems(spec, { g, goal, level, place, di, cardio: true }) };
@@ -346,9 +347,10 @@ function buildProgram({ sex, goal, days, level, split = 'auto', place = 'gym' })
 }
 // Программа из каталога: c — строка CATALOG (programs.js).
 function catalogProgram(c) {
-  const [name, , place, , goal, , days, about, scheme] = c;
+  const [name, sex, place, , goal, , days, about, scheme] = c;
   return {
     name, note: about,
+    ...(sex === 'a' ? {} : { sex }),
     days: days.map((key, di) => {
       const [title, spec] = blockOf(key);
       return { name: `День ${di + 1} · ${title}`, items: dayItems(spec, { g: scheme || GOALS[goal], goal, level: 'pro', place, di, cardio: true }) };

@@ -168,6 +168,26 @@ function exMuscles(ex) {
   return [GROUP_MUSCLE[ex.muscle] ? [GROUP_MUSCLE[ex.muscle]] : [], []];
 }
 const muscleMap = ex => mapHtml(...exMuscles(ex));
+// Какую фигуру рисовать — женскую или мужскую. Порядок: явное указание (предпросмотр в подборе) →
+// то, что сейчас на экране (раздел упражнений, программа, тренировка) → пол из профиля.
+let figSex = null;
+// Для кого программа: записано при создании, а у старых программ определяется по каталогу или названию.
+function progSex(p) {
+  if (!p) return null;
+  if (p.sex === 'f' || p.sex === 'm') return p.sex;
+  const c = CATALOG.find(x => x[0] === p.name);
+  if (c && c[1] !== 'a') return c[1];
+  return /жен\./.test(p.name) ? 'f' : /муж\./.test(p.name) ? 'm' : null;
+}
+function ctxSex() {
+  const [page, id] = location.hash.slice(2).split('/');
+  if (page === 'exercise' || page === 'exercises') return ef.s || null;
+  if (page === 'program') return progSex(P(id));
+  if (page === 'workout') return progSex(P((W(id) || {}).pid));
+  if (page === 'catalog') { const c = CATALOG[+id]; return c ? (c[1] !== 'a' ? c[1] : cf.sex || null) : null; }
+  if (!page || page === 'workouts') return progSex(activeProgram());
+  return null;
+}
 // Мышцы тренировочного дня: основные мышцы всех упражнений (кардио не учитываем) и вспомогательные сверх них.
 function dayMuscles(items) {
   const pri = new Set(), sec = new Set();
@@ -187,7 +207,7 @@ function mapHtml(pri, sec, mini) {
   sec.forEach(m => MUSCLE_PARTS[m].forEach(p => cls[p] = 's'));
   pri.forEach(m => MUSCLE_PARTS[m].forEach(p => cls[p] = 'p'));
   // фигура — мужская или женская, по полу из профиля; контуры мышц рисуются линиями, работающие мышцы закрашены
-  const body = BODY[profile().sex === 'f' ? 'f' : 'm'];
+  const body = BODY[(figSex || ctxSex() || profile().sex) === 'f' ? 'f' : 'm'];
   const fig = (side, label) => `<svg viewBox="${side.box}" role="img" aria-label="${label}">${side.parts.map(([name, ...paths]) =>
     paths.map(d => `<path class="${cls[name] || (name === 'hair' ? 'h' : '')}" d="${d}"/>`).join('')).join('')}<path class="o" d="${side.outline}"/></svg>`;
   const figs = `<div class="mm-figs">${fig(body.front, 'Вид спереди')}${fig(body.back, 'Вид сзади')}</div>`;
@@ -546,6 +566,10 @@ function pgPrograms() {
 // Подбор программы: пол, цель, число дней, уровень — и предпросмотр того, что получится.
 const wiz = { sex: 'm', goal: 'mass', place: 'gym', days: 3, split: 'auto', level: 'new' };
 function wizHtml(onb) {
+  figSex = wiz.sex;
+  try { return wizBody(onb); } finally { figSex = null; }
+}
+function wizBody(onb) {
   const p = buildProgram(wiz), g = GOALS[wiz.goal];
   const group = (key, title) => `<div class="muted small" style="margin:4px 2px 6px">${title}</div><div class="chips" style="flex-wrap:wrap">${
     WIZ[key].map(([v, l]) => `<button class="chip ${wiz[key] === v ? 'on' : ''}" data-a="wizSet" data-k="${key}" data-v="${v}"
@@ -1921,12 +1945,16 @@ const actions = {
   obProgram: v => v === 'gen' ? buildProgram({ sex: ob.sex, goal: ob.goal, days: ob.days, level: ob.level === 'new' ? 'new' : 'pro', place: ob.place }) : catalogProgram(CATALOG[+v]),
   obPreview(d) {
     const p = actions.obProgram(d.v);
-    sheet(`<h3>${esc(p.name)}</h3><div class="note">${esc(p.note)}</div>${programPreview(p)}
+    figSex = p.sex || ob.sex;
+    const days = programPreview(p);
+    figSex = null;
+    sheet(`<h3>${esc(p.name)}</h3><div class="note">${esc(p.note)}</div>${days}
       <div class="row end"><button class="btn ghost" data-a="sheetClose">Закрыть</button>
       <button class="btn primary" data-a="obChoose" data-v="${d.v}">Выбрать эту программу</button></div>`);
   },
   obChoose(d) {
     const p = adoptProgram(actions.obProgram(d.v));
+    if (!p.sex) p.sex = ob.sex;
     db.activeProgram = p.id;
     db.profile = { ...profile(), ...obProfile() };
     // первый замер веса — чтобы сразу был виден на графике

@@ -1,11 +1,11 @@
 {
- "version": 20,
- "name": "1.19",
- "notes": "Упражнения: разделы «Для женщин» и «Для мужчин»",
+ "version": 21,
+ "name": "1.20",
+ "notes": "Схема мышц: женская фигура в разделе «Для женщин» и в женских программах",
  "files": {
-  "app.js": "799df55e523f407e7ef699b1d5864b25ff867740797ce1a4faff7a2fd3af714f",
+  "app.js": "b90cf11d597c763e1876df55820d195764f17a1b1598bbf9d05c03382a75b661",
   "body.js": "a9e94e747e46603482599f48e74be167e246809e1f303e1cba200c1369b3dcff",
-  "exercises.js": "b0449393d7b95ec4d4c3e5db13e0f83b72634990f0c64c472e06d4a56388c1f6",
+  "exercises.js": "f47247c9109db21f1b45d17d3281f27423c59cc040473eba5746a4f4fbf3580d",
   "guide.js": "0eab3fb2c2c87c8a493f2c70cb7b98358e730deafee9df8271a4bd1655ecdc13",
   "icons/icon-192.png": "fcd36f043b1ff35b61e33747e6b21380e7607a1eb8baa957fa1018264d6a8b70",
   "icons/icon-512.png": "fc1fc021b05f4b5c162a7c84bcfd903b9336c93ec9a6f6ff9050b3673bbfec65",
