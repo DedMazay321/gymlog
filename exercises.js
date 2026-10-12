@@ -301,30 +301,57 @@ const PLACE_TIPS = {
   body: ' Инвентарь не нужен. Без отягощений нагрузку повышают числом повторов и более сложными вариантами упражнений.',
 };
 
+// Собирает упражнения одного дня из описания блока.
+// o: { g — схема подходов по ролям, goal, level, place, di — номер дня, cardio — добавлять ли кардио по цели }
+function dayItems(spec, o) {
+  const list = spec.split(' ').map(tok => {
+    const m = /^(\d+)(?::(\d+)x(\d+)(\+)?|([MAC]))$/.exec(tok);
+    if (!m) throw new Error('Неверное описание упражнения: ' + tok);
+    return m[5] ? { e: +m[1], role: m[5] } : { e: +m[1], sets: +m[2], reps: +m[3], ss: !!m[4] };
+  });
+  // новичку — на одно вспомогательное упражнение и один базовый подход меньше
+  const lastA = list.map(x => x.role).lastIndexOf('A');
+  if (o.level === 'new' && lastA >= 0) list.splice(lastA, 1);
+  const base = GOALS[o.goal];
+  const items = list.map(x => {
+    const kind = BASE_EXERCISES[x.e][3];
+    if (!x.role) return { exId: 'e' + x.e, sets: x.sets, reps: x.reps, rest: kind === 'cardio' ? null : base.A[2], ...(x.ss ? { ss: true } : {}) };
+    let [sets, reps, rest] = o.g[x.role];
+    if (o.level === 'new' && x.role === 'M') sets = Math.max(3, sets - 1);
+    if (kind === 'time') reps = o.goal === 'strength' ? 45 : 60;
+    if (x.e === 15) reps = Math.min(reps, 8);   // становая тяга — без многоповторки
+    // без отягощений малое число повторов не даёт нагрузки
+    else if (o.place === 'body' && kind !== 'time') { reps = Math.max(reps, 12); rest = Math.min(rest, 60); }
+    return { exId: 'e' + x.e, sets, reps, rest };
+  });
+  const hasCardio = list.some(x => BASE_EXERCISES[x.e][3] === 'cardio');
+  if (o.cardio && !hasCardio && (base.cardio === 1 || (base.cardio === 2 && o.di % 2 === 0))) {
+    const cardio = o.place === 'gym' ? CARDIO_ROTATION : HOME_CARDIO;
+    items.push({ exId: 'e' + cardio[o.di % cardio.length], sets: 1, reps: base.cardioMin, rest: null });
+  }
+  return items;
+}
+const blockOf = key => DAY_BLOCKS[key] || EXTRA_BLOCKS[key];
+
 function buildProgram({ sex, goal, days, level, split = 'auto', place = 'gym' }) {
-  const g = GOALS[goal], cardio = place === 'gym' ? CARDIO_ROTATION : HOME_CARDIO;
+  const g = GOALS[goal];
   return {
     name: `${g.name} · ${SPLIT_NAMES[split] ? SPLIT_NAMES[split] + ' · ' : ''}${days} дн. · ${place === 'gym' ? '' : 'дом · '}${sex === 'f' ? 'жен.' : 'муж.'}`,
     note: g.tip + (PLACE_TIPS[place] || ''),
     days: splitDays(sex, days, split, place).map((key, di) => {
-      const [title, spec] = DAY_BLOCKS[key];
-      const list = spec.split(' ').map(s => [parseInt(s, 10), s.slice(-1)]);
-      // новичку — на одно вспомогательное упражнение и один базовый подход меньше
-      const lastA = list.map(x => x[1]).lastIndexOf('A');
-      if (level === 'new' && lastA >= 0) list.splice(lastA, 1);
-      const items = list.map(([e, role]) => {
-        let [sets, reps, rest] = g[role];
-        if (level === 'new' && role === 'M') sets = Math.max(3, sets - 1);
-        if (BASE_EXERCISES[e][3] === 'time') reps = goal === 'strength' ? 45 : 60;
-        if (e === 15) reps = Math.min(reps, 8);   // становая тяга — без многоповторки
-        // без отягощений малое число повторов не даёт нагрузки
-        else if (place === 'body' && BASE_EXERCISES[e][3] !== 'time') { reps = Math.max(reps, 12); rest = Math.min(rest, 60); }
-        return { exId: 'e' + e, sets, reps, rest };
-      });
-      if (g.cardio === 1 || (g.cardio === 2 && di % 2 === 0)) {
-        items.push({ exId: 'e' + cardio[di % cardio.length], sets: 1, reps: g.cardioMin, rest: null });
-      }
-      return { name: `День ${di + 1} · ${title}`, items };
+      const [title, spec] = blockOf(key);
+      return { name: `День ${di + 1} · ${title}`, items: dayItems(spec, { g, goal, level, place, di, cardio: true }) };
+    }),
+  };
+}
+// Программа из каталога: c — строка CATALOG (programs.js).
+function catalogProgram(c) {
+  const [name, , place, , goal, , days, about, scheme] = c;
+  return {
+    name, note: about,
+    days: days.map((key, di) => {
+      const [title, spec] = blockOf(key);
+      return { name: `День ${di + 1} · ${title}`, items: dayItems(spec, { g: scheme || GOALS[goal], goal, level: 'pro', place, di, cardio: true }) };
     }),
   };
 }

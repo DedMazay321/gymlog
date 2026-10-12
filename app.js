@@ -419,13 +419,8 @@ function weekStrip() {
 }
 // Первый запуск: вместо пустого экрана — подбор программы.
 const isNew = () => !db.settings.onboarded && !db.programs.length && !db.workouts.length;
-function pgWelcome() {
-  return `<div class="welcome"><div class="hello">👋</div><h1>Добро пожаловать в GymLog</h1>
-    <p class="muted">Ответьте на несколько вопросов — приложение составит программу тренировок и расписание на неделю. Всё можно изменить позже.</p></div>
-  <section class="card" id="wizbox">${wizHtml(true)}</section>`;
-}
 function pgWorkouts() {
-  if (isNew()) return pgWelcome();
+  if (isNew()) return pgPick(true);
   const act = activeW(), list = sortedW().filter(w => w.end), pl = nextPlan(), now = new Date();
   const hello = now.getHours() < 5 ? 'Доброй ночи' : now.getHours() < 12 ? 'Доброе утро' : now.getHours() < 18 ? 'Добрый день' : 'Добрый вечер';
   return `<header class="top"><div class="grow"><h1>${hello}</h1>
@@ -541,9 +536,10 @@ function pgPrograms() {
   ${db.programs.map(p => `<a class="card link" href="#/program/${p.id}"><b>${esc(p.name)}</b>
     <div class="muted small">${p.days.length} дн.${p.days.length ? ' · ' + p.days.map(d => esc(d.name)).join(', ') : ''}</div></a>`).join('')
     || `<div class="empty">Программ пока нет.<br>Создайте свою или возьмите готовую.</div>`}
-  <button class="btn block primary" data-a="wizOpen">Подобрать программу под цель</button>
-  <button class="btn block" data-a="pAdd">+ Своя программа с нуля</button>
-  <button class="btn block ghost" data-a="pTemplates">Классические программы</button>`;
+  <a class="btn block primary" href="#/pick">🎯 Подобрать программу под себя</a>
+  <a class="btn block" href="#/catalog">📚 Каталог программ · ${CATALOG.length}</a>
+  <div class="row two"><button class="btn" data-a="wizOpen">Конструктор</button><button class="btn" data-a="pAdd">+ С нуля</button></div>
+  <p class="muted small">«Подобрать» — несколько вопросов и готовые варианты. «Каталог» — все программы с фильтрами. «Конструктор» собирает программу по параметрам, «С нуля» — пустая программа для своих упражнений.</p>`;
 }
 // Подбор программы: пол, цель, число дней, уровень — и предпросмотр того, что получится.
 const wiz = { sex: 'm', goal: 'mass', place: 'gym', days: 3, split: 'auto', level: 'new' };
@@ -650,6 +646,173 @@ function pgDay(p, di) {
   <div class="muted small" style="margin:0 2px 12px">Нажмите на фото, чтобы увидеть технику и мышцы, на название — чтобы изменить подходы, повторы и отдых.</div>
   <button class="btn block" data-a="piAdd" ${at}>+ Добавить упражнение</button>
   <button class="btn block primary" data-a="start" ${at}>▶ Начать тренировку</button>`;
+}
+
+/* ---------- каталог готовых программ ---------- */
+const cap = s => s.replace(/^./, c => c.toUpperCase());
+const cf = { sex: '', goal: '', place: '', level: '', days: '' };
+function catTags(c) {
+  const [, sex, place, level, goal, focus, days] = c;
+  return [sex === 'f' ? 'для женщин' : sex === 'm' ? 'для мужчин' : 'для всех', PLACE_NAMES[place], `${days.length} дн. в неделю`,
+    LEVEL_NAMES[level], GOAL_NAMES[goal], focus === 'all' ? '' : 'акцент: ' + FOCUS_NAMES[focus]].filter(Boolean);
+}
+const tagsHtml = c => `<div class="tags">${catTags(c).map(t => `<span>${t}</span>`).join('')}</div>`;
+function catListHtml() {
+  const list = CATALOG.filter(c => (!cf.sex || c[1] === 'a' || c[1] === cf.sex) && (!cf.goal || c[4] === cf.goal) && (!cf.place || c[2] === cf.place)
+    && (!cf.level || c[3] === cf.level) && (!cf.days || c[6].length === +cf.days));
+  return `<div class="muted small" style="margin:0 2px 8px">Найдено программ: ${list.length} из ${CATALOG.length}</div>` +
+    (list.map(c => `<a class="card link" href="#/catalog/${CATALOG.indexOf(c)}"><b>${esc(c[0])}</b>${tagsHtml(c)}
+      <div class="muted small">${esc(c[7].split('. ')[0].replace(/\.$/, ''))}.</div></a>`).join('')
+      || `<div class="empty">Под такие условия программ нет.<br>Уберите один из фильтров.</div>`);
+}
+// Дни программы с мышцами и упражнениями — для каталога и предпросмотра в анкете.
+function programPreview(p) {
+  return p.days.map(d => {
+    const st = dayStats(d), [pri, sec] = dayMuscles(d.items);
+    return `<section class="card"><b>${esc(d.name)}</b>
+      <div class="day-row">${mapHtml(pri, sec, true)}<div>${pri.length ? `<div class="small"><b>${muscleNames(pri)}</b></div>` : ''}
+        <div class="muted small">${d.items.length} упр. · ${st.sets} подх. · ≈ ${st.min} мин</div></div></div>
+      ${d.items.map(it => `<div class="day-ex"><b>${esc(exById(it.exId).name)}</b><span class="muted">${itemPlan(it)}${it.ss ? ' · суперсет со следующим' : ''}</span></div>`).join('')}
+    </section>`;
+  }).join('');
+}
+function pgCatalog(id) {
+  const c = id != null && CATALOG[+id];
+  if (c) {
+    const p = catalogProgram(c), stats = p.days.map(dayStats);
+    const add = `<button class="btn block primary" data-a="catAdd" data-id="${+id}">Добавить в мои программы</button>`;
+    return `<header class="top"><a class="ic" href="#/catalog">‹</a><h1>${esc(c[0])}</h1></header>
+    ${tagsHtml(c)}<div class="note" style="margin-top:10px">${esc(c[7])}</div>
+    <div class="tiles">
+      <div class="tile"><b>${p.days.length}</b><span>дней в неделю</span></div>
+      <div class="tile"><b>${stats.reduce((a, s) => a + s.sets, 0)}</b><span>подходов в неделю</span></div>
+      <div class="tile"><b>≈ ${Math.round(stats.reduce((a, s) => a + s.min, 0) / stats.length / 5) * 5}</b><span>минут на тренировку</span></div>
+    </div>
+    ${add}${programPreview(p)}${add}`;
+  }
+  const sel = (k, any, opts) => `<select data-in="catF" data-k="${k}">${[['', any], ...opts].map(([v, l]) =>
+    `<option value="${v}" ${String(cf[k]) === String(v) ? 'selected' : ''}>${l}</option>`).join('')}</select>`;
+  const named = o => Object.entries(o).map(([v, l]) => [v, cap(l)]);
+  return `<header class="top"><a class="ic" href="#/programs">‹</a><h1>Каталог программ</h1></header>
+  <div class="filters">${sel('sex', 'Для кого: все', [['f', 'Для женщин'], ['m', 'Для мужчин']])}${sel('goal', 'Цель: любая', named(GOAL_NAMES))}
+    ${sel('place', 'Место: любое', named(PLACE_NAMES))}${sel('level', 'Уровень: любой', named(LEVEL_NAMES))}
+    ${sel('days', 'Дней в неделю: сколько угодно', [2, 3, 4, 5, 6].map(d => [d, d + ' дн. в неделю']))}</div>
+  <div id="catbox">${catListHtml()}</div>`;
+}
+// Добавляет программу к своим: расписание по умолчанию, а если текущей программы нет — делает её текущей.
+function adoptProgram(p) {
+  p.id = uid();
+  p.days.forEach(d => d.id = uid());
+  const spread = { 2: [0, 3], 3: [0, 2, 4], 4: [0, 1, 3, 4], 5: [0, 1, 2, 3, 4], 6: [0, 1, 2, 3, 4, 5] }[p.days.length] || [];
+  p.week = Object.fromEntries(spread.map((wd, i) => [wd, i]));
+  db.programs.push(p);
+  if (!activeProgram()) db.activeProgram = p.id;
+  return p;
+}
+
+/* ---------- анкета: подбор программы под человека ---------- */
+// Вопросы идут по одному; в конце — несколько подходящих программ на выбор, а не весь каталог.
+let ob = null;
+const OB_STEPS = ['sex', 'body', 'goal', 'level', 'place', 'days', 'focus', 'result'];
+const OB_FOCUS = {
+  f: [['all', '✨', 'Всё тело равномерно', 'Без перекосов: каждая группа мышц получает свою нагрузку'], ['glutes', '🍑', 'Ягодицы и ноги', 'Больше работы на низ тела'],
+    ['abs', '🎯', 'Пресс и талия', 'Основная программа плюс отдельный комплекс на пресс'], ['upper', '💪', 'Верх тела и осанка', 'Плечи, спина и грудь']],
+  m: [['all', '✨', 'Всё тело равномерно', 'Без перекосов: каждая группа мышц получает свою нагрузку'], ['chest', '🛡️', 'Грудь и спина', 'Упор на корпус'],
+    ['arms', '💪', 'Руки и плечи', 'Бицепс, трицепс и дельты'], ['legs', '🦵', 'Ноги', 'Если низ отстаёт от верха'], ['abs', '🎯', 'Пресс', 'Основная программа плюс отдельный комплекс на пресс']],
+};
+const FOCUS_TAGS = { all: ['all'], glutes: ['glutes', 'legs'], abs: ['abs'], upper: ['upper', 'chest', 'back'], chest: ['chest', 'back'], arms: ['arms', 'shoulders'], legs: ['legs'] };
+function obInit() {
+  const p = profile(), known = !!db.profile;
+  ob = { step: 0, sex: known ? p.sex : null, age: known ? p.age : 25, height: known ? p.height : 170, weight: known ? p.weight : 65,
+    goal: null, level: null, place: null, days: 3, time: 60, focus: 'all' };
+}
+// Подбирает программы каталога под ответы: чем больше совпадений, тем выше в списке.
+function matchPrograms(o) {
+  const L = { new: 0, mid: 1, pro: 2 }, near = { mass: ['strength', 'tone'], loss: ['tone'], tone: ['loss', 'mass'], strength: ['mass'] };
+  const want = FOCUS_TAGS[o.focus] || ['all'];
+  return CATALOG.map(c => {
+    const [, sex, place, level, goal, focus, days] = c;
+    if (place !== o.place || (sex !== 'a' && sex !== o.sex)) return null;
+    if (L[level] > L[o.level] + 1) return null;   // программы на два уровня сложнее не предлагаем
+    const p = catalogProgram(c), min = Math.round(p.days.reduce((a, d) => a + dayStats(d).min, 0) / p.days.length / 5) * 5;
+    const hit = { goal: goal === o.goal, days: days.length === o.days, level: level === o.level, focus: want.includes(focus), time: min <= o.time + 10 };
+    const score = (hit.goal ? 6 : near[o.goal].includes(goal) ? 2 : -3) + (hit.days ? 4 : Math.abs(days.length - o.days) === 1 ? 1 : -3)
+      + (hit.level ? 3 : -2) + (hit.focus ? 4 : focus === 'all' ? 1 : -4) + (hit.time ? 1 : -2) + (sex === o.sex ? 1 : 0);
+    return { c, p, min, hit, score };
+  }).filter(Boolean).sort((a, b) => b.score - a.score);
+}
+function obResult() {
+  const all = matchPrograms(ob), top = all.filter(m => m.c[5] !== 'abs' || ob.focus !== 'abs').slice(0, 3);
+  // если среди лучших нет программы с выбранным акцентом, а в каталоге она есть — показываем её третьей
+  const accent = ob.focus !== 'all' && ob.focus !== 'abs' && !top.some(m => m.hit.focus) ? all.find(m => m.hit.focus) : null;
+  if (accent) top[Math.min(2, top.length)] = accent;
+  // когда каталог подходит слабо (редкое сочетание ответов), первой идёт программа, собранная под ответы
+  const genFirst = !top.length || top[0].score < 8;
+  // при акценте на пресс основную программу дополняем отдельным комплексом
+  const extra = ob.focus === 'abs' ? all.find(m => m.c[5] === 'abs') : null;
+  const gen = buildProgram({ sex: ob.sex, goal: ob.goal, days: ob.days, level: ob.level === 'new' ? 'new' : 'pro', place: ob.place });
+  const x = (() => { const save = db.profile; db.profile = { ...profile(), ...obProfile() }; const r = nutrition(); db.profile = save; return r; })();
+  const why = m => [m.hit.goal && 'цель', m.hit.days && 'число дней', m.hit.level && 'уровень', m.hit.focus && ob.focus !== 'all' && 'акцент', m.hit.time && 'время'].filter(Boolean).join(', ');
+  const card = (m, i, label) => `<section class="card ${i === 0 ? 'active' : ''}">${label ? `<div class="badge">${label}</div>` : ''}
+    <b>${esc(m.c[0])}</b>${tagsHtml(m.c)}
+    <div class="muted small">${esc(m.c[7].split('. ')[0].replace(/\.$/, ''))}.</div>
+    <div class="small" style="margin-top:6px">≈ ${m.min} мин на тренировку${why(m) ? ` · совпало: ${why(m)}` : ''}</div>
+    <div class="row"><button class="btn sm primary" data-a="obChoose" data-v="${CATALOG.indexOf(m.c)}">Выбрать</button>
+      <button class="btn sm" data-a="obPreview" data-v="${CATALOG.indexOf(m.c)}">Посмотреть состав</button></div></section>`;
+  const genCard = `<section class="card ${genFirst ? 'active' : ''}"><div class="badge ${genFirst ? '' : 'alt'}">${genFirst ? 'Лучшее совпадение' : 'Собрана под ваши ответы'}</div><b>${esc(gen.name)}</b>
+      <div class="muted small">Составлена автоматически под ваши ответы: ${gen.days.map(d => d.name.replace(/^День \d+ · /, '')).join(' · ')}.</div>
+      <div class="row"><button class="btn sm ${genFirst ? 'primary' : ''}" data-a="obChoose" data-v="gen">Выбрать</button>
+        <button class="btn sm" data-a="obPreview" data-v="gen">Посмотреть состав</button></div></section>`;
+  return `<section class="card"><b>Ваша норма на день</b>
+      <div class="muted small" style="margin-top:4px">Около ${x.kcal} ккал, ${x.protein} г белка и ${litres(x.water)} воды. Подробный расчёт — в «Ещё» → «Питание, вода и сон».</div></section>
+    <h2>Подходящие программы</h2>
+    ${genFirst ? genCard : ''}
+    ${top.map((m, i) => card(m, genFirst ? i + 1 : i, m === accent ? 'С вашим акцентом' : i === 0 && !genFirst ? 'Лучшее совпадение' : '')).join('')}
+    ${extra ? card(extra, 9, 'В дополнение: пресс') : ''}
+    ${genFirst ? '' : genCard}
+    <a class="btn block ghost" href="#/catalog">Посмотреть весь каталог (${CATALOG.length})</a>`;
+}
+const obProfile = () => ({ sex: ob.sex, age: ob.age, height: ob.height, weight: ob.weight,
+  goal: ob.goal === 'loss' ? 'loss' : ob.goal === 'mass' ? 'gain' : 'keep', act: ob.days <= 2 ? 1.375 : ob.days <= 4 ? 1.55 : 1.725 });
+function pgPick(first) {
+  if (!ob) obInit();
+  const step = OB_STEPS[ob.step], n1 = ob.step + 1, total = OB_STEPS.length;
+  const opt = (k, v, icon, title, text) => `<button class="opt ${ob[k] === v ? 'on' : ''}" data-a="obSet" data-k="${k}" data-v="${v}">
+    <span class="oi">${icon}</span><div><b>${title}</b>${text ? `<div class="muted small">${text}</div>` : ''}</div></button>`;
+  const numRow = (k, label, unit) => `<div class="num-row"><span>${label}</span><div class="stp"><button data-a="obStep" data-k="${k}" data-v="-1">−</button>
+    <input type="text" inputmode="decimal" data-in="obNum" data-k="${k}" value="${ob[k]}"><button data-a="obStep" data-k="${k}" data-v="1">+</button></div><i>${unit}</i></div>`;
+  const chips = (k, list) => `<div class="chips" style="flex-wrap:wrap">${list.map(([v, l]) =>
+    `<button class="chip ${ob[k] === v ? 'on' : ''}" data-a="obSet" data-k="${k}" data-v="${v}" data-stay="1">${l}</button>`).join('')}</div>`;
+  const next = `<button class="btn block primary" style="margin-top:14px" data-a="obNext">Далее</button>`;
+  const screens = {
+    sex: ['Для кого подбираем программу?', 'От этого зависят упражнения и расчёт питания.',
+      opt('sex', 'f', '👩', 'Женщина') + opt('sex', 'm', '👨', 'Мужчина')],
+    body: ['Возраст, рост и вес', 'Нужны, чтобы рассчитать калории, белок и норму воды. Данные остаются только на этом устройстве.',
+      `<section class="card">${numRow('age', 'Возраст', 'лет')}${numRow('height', 'Рост', 'см')}${numRow('weight', 'Вес', 'кг')}</section>${next}`],
+    goal: ['Какая у вас цель?', 'Под неё подбираются число повторов, отдых и кардио.',
+      opt('goal', 'loss', '🔥', 'Похудеть', 'Убрать лишнее, сохранив мышцы') + opt('goal', 'tone', '🌿', 'Подтянуть фигуру', 'Тонус, осанка и хорошее самочувствие')
+      + opt('goal', 'mass', '💪', 'Набрать мышечную массу', 'Стать крепче и объёмнее') + opt('goal', 'strength', '🏋️', 'Стать сильнее', 'Рост рабочих весов в базовых упражнениях')],
+    level: ['Какой у вас опыт тренировок?', 'Чтобы нагрузка была посильной и при этом не слишком лёгкой.',
+      opt('level', 'new', '🌱', 'Новичок', 'Нет опыта или был долгий перерыв') + opt('level', 'mid', '🌿', 'Средний', 'Занимаюсь от полугода, знаю основные упражнения')
+      + opt('level', 'pro', '🌳', 'Опытный', 'Тренируюсь регулярно больше двух лет')],
+    place: ['Где будете заниматься?', 'Программа составляется под доступное оборудование.',
+      opt('place', 'gym', '🏟️', 'В тренажёрном зале', 'Штанги, тренажёры, блоки') + opt('place', 'db', '🏠', 'Дома с гантелями', 'Пара гантелей и коврик')
+      + opt('place', 'body', '🤸', 'Дома без инвентаря', 'Только собственный вес')],
+    days: ['Сколько времени готовы уделять?', 'Лучше выбрать реалистичный график: регулярность важнее числа тренировок.',
+      `<section class="card"><div class="muted small" style="margin:0 2px 6px">Тренировок в неделю</div>${chips('days', [2, 3, 4, 5, 6].map(d => [d, String(d)]))}
+        <div class="muted small" style="margin:6px 2px">Длительность одной тренировки</div>${chips('time', [[30, 'до 30 мин'], [45, '45 мин'], [60, 'около часа'], [90, 'до 1,5 часа']])}</section>${next}`],
+    focus: ['На что сделать акцент?', 'Основа программы в любом случае прорабатывает всё тело.',
+      (OB_FOCUS[ob.sex] || OB_FOCUS.f).map(([v, icon, title, text]) => opt('focus', v, icon, title, text)).join('')],
+    result: ['Готово — вот что вам подходит', 'Выберите один вариант. Его можно будет изменить или заменить в разделе «Программы».', ''],
+  };
+  const [title, text, body] = screens[step];
+  return `<div class="ob-head">${ob.step ? `<button class="ic" data-a="obBack" aria-label="Назад">‹</button>` : '<span class="ic"></span>'}
+      <div class="bar"><i style="width:${Math.round(n1 / total * 100)}%"></i></div><span class="muted small">${n1} из ${total}</span></div>
+    ${first && ob.step === 0 ? `<div class="welcome"><div class="hello">👋</div><h1>Добро пожаловать в GymLog</h1>
+      <p class="muted">Несколько вопросов — и приложение подберёт программу тренировок, расписание и норму питания.</p></div>` : ''}
+    <h1 class="ob-title">${title}</h1><p class="muted ob-text">${text}</p>
+    ${step === 'result' ? obResult() : body}
+    ${first && ob.step === 0 ? `<button class="btn block ghost" style="margin-top:8px" data-a="onbSkip">Пропустить и настроить самостоятельно</button>` : ''}`;
 }
 
 /* ---------- экран: упражнения ---------- */
@@ -1290,8 +1453,8 @@ window.onNativeUpdate = r => {
 };
 
 /* ---------- маршруты ---------- */
-const pages = { workouts: pgWorkouts, workout: pgWorkout, programs: pgPrograms, program: pgProgram, exercises: pgExercises, exercise: pgExercise, measures: pgMeasures, more: pgMore, stats: pgStats, awards: pgAwards, health: pgHealth, stretch: pgStretch, history: pgHistory, progress: pgProgress };
-const tabOf = { workout: 'workouts', program: 'programs', exercise: 'exercises', stats: 'progress', awards: 'progress', history: 'progress', measures: 'progress', health: 'more', stretch: 'more' };
+const pages = { workouts: pgWorkouts, workout: pgWorkout, programs: pgPrograms, program: pgProgram, exercises: pgExercises, exercise: pgExercise, measures: pgMeasures, more: pgMore, stats: pgStats, awards: pgAwards, health: pgHealth, stretch: pgStretch, history: pgHistory, progress: pgProgress, catalog: pgCatalog, pick: () => pgPick(false) };
+const tabOf = { workout: 'workouts', program: 'programs', exercise: 'exercises', stats: 'progress', awards: 'progress', history: 'progress', measures: 'progress', catalog: 'programs', pick: 'programs', health: 'more', stretch: 'more' };
 function render() {
   const [page, id, sub] = (location.hash.slice(2) || 'workouts').split('/');
   const fn = pages[page] || pgWorkouts;
@@ -1530,20 +1693,48 @@ const actions = {
     el.innerHTML = wizHtml(!!box); el.scrollTop = top;
   },
   wizCreate() {
-    const p = buildProgram(wiz);
-    p.id = uid();
-    p.days.forEach(d => d.id = uid());
-    // расписание по умолчанию: дни распределяются по неделе с отдыхом между ними
-    const spread = { 2: [0, 3], 3: [0, 2, 4], 4: [0, 1, 3, 4], 5: [0, 1, 2, 3, 4], 6: [0, 1, 2, 3, 4, 5] }[p.days.length] || [];
-    p.week = Object.fromEntries(spread.map((wd, i) => [wd, i]));
-    const first = isNew();
-    db.programs.push(p);
-    if (first || !activeProgram()) db.activeProgram = p.id;
-    if (first) db.profile = { ...profile(), sex: wiz.sex, goal: { mass: 'gain', loss: 'loss' }[wiz.goal] || 'keep' };
+    const p = adoptProgram(buildProgram(wiz));
     db.settings.onboarded = true;
-    save(); syncReminders(); closeSheet();
-    go(first ? '#/workouts' : '#/program/' + p.id);
-    toast(first ? 'Программа и расписание готовы — их можно изменить в «Программах»' : 'Программа создана — её можно изменить под себя');
+    save(); syncReminders(); closeSheet(); go('#/program/' + p.id);
+    toast('Программа создана — её можно изменить под себя');
+  },
+  catAdd(d) {
+    const p = adoptProgram(catalogProgram(CATALOG[+d.id]));
+    db.settings.onboarded = true;
+    save(); syncReminders(); go('#/program/' + p.id);
+    toast('Программа добавлена — расписание можно изменить');
+  },
+  /* анкета */
+  obSet(d) {
+    ob[d.k] = d.k === 'days' || d.k === 'time' ? +d.v : d.v;
+    if (d.k === 'sex') ob.focus = 'all';
+    if (!d.stay) ob.step++;          // вопросы с одним ответом листаются сами
+    render(); if (!d.stay) window.scrollTo(0, 0);
+  },
+  obStep(d, el) {
+    const lim = { age: [12, 90], height: [120, 220], weight: [35, 200] }[d.k];
+    ob[d.k] = Math.max(lim[0], Math.min(lim[1], Math.round(((+ob[d.k] || lim[0]) + +d.v) * 10) / 10));
+    el.parentNode.querySelector('input').value = ob[d.k];
+  },
+  obNext() { ob.step = Math.min(OB_STEPS.length - 1, ob.step + 1); render(); window.scrollTo(0, 0); },
+  obBack() { ob.step = Math.max(0, ob.step - 1); render(); window.scrollTo(0, 0); },
+  obProgram: v => v === 'gen' ? buildProgram({ sex: ob.sex, goal: ob.goal, days: ob.days, level: ob.level === 'new' ? 'new' : 'pro', place: ob.place }) : catalogProgram(CATALOG[+v]),
+  obPreview(d) {
+    const p = actions.obProgram(d.v);
+    sheet(`<h3>${esc(p.name)}</h3><div class="note">${esc(p.note)}</div>${programPreview(p)}
+      <div class="row end"><button class="btn ghost" data-a="sheetClose">Закрыть</button>
+      <button class="btn primary" data-a="obChoose" data-v="${d.v}">Выбрать эту программу</button></div>`);
+  },
+  obChoose(d) {
+    const p = adoptProgram(actions.obProgram(d.v));
+    db.activeProgram = p.id;
+    db.profile = { ...profile(), ...obProfile() };
+    // первый замер веса — чтобы сразу был виден на графике
+    if (!db.measures.some(m => m.type === 'weight')) db.measures.push({ id: uid(), type: 'weight', value: ob.weight, date: Date.now() });
+    db.settings.onboarded = true;
+    ob = null;
+    save(); syncReminders(); closeSheet(); go('#/workouts'); window.scrollTo(0, 0);
+    toast('Программа и расписание готовы. Изменить их можно в «Программах»');
   },
   async pAdd() {
     const r = await form('Новая программа', [{ name: 'name', label: 'Название', value: '', placeholder: 'Например: Сплит на 3 дня' }]);
@@ -1772,6 +1963,8 @@ const actions = {
 };
 
 const inputs = {
+  catF(d, el) { cf[d.k] = el.value; $('#catbox').innerHTML = catListHtml(); },
+  obNum(d, el) { const v = num(el.value); if (v != null) ob[d.k] = v; },
   prof(d, el) {
     const v = d.k === 'sex' || d.k === 'goal' ? el.value : num(el.value);
     if (v == null || v === 0) return;
