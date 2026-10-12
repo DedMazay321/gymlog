@@ -152,10 +152,10 @@ const MUSCLE_RU = {
 };
 // мышца -> части схемы тела (BODY)
 const MUSCLE_PARTS = {
-  abdominals: ['abs', 'obliques'], abductors: ['abductors'], adductors: ['adductor'], biceps: ['biceps'],
-  calves: ['calves', 'left-soleus', 'right-soleus'], chest: ['chest'], forearms: ['forearm'], glutes: ['gluteal'],
+  abdominals: ['abs', 'obliques'], abductors: ['gluteal'], adductors: ['adductors'], biceps: ['biceps'],
+  calves: ['calves'], chest: ['chest'], forearms: ['forearm'], glutes: ['gluteal'],
   hamstrings: ['hamstring'], lats: ['upper-back'], 'lower back': ['lower-back'], 'middle back': ['upper-back', 'trapezius'],
-  neck: ['neck'], quadriceps: ['quadriceps'], shoulders: ['front-deltoids', 'back-deltoids'], traps: ['trapezius'], triceps: ['triceps'],
+  neck: ['neck'], quadriceps: ['quadriceps'], shoulders: ['deltoids'], traps: ['trapezius'], triceps: ['triceps'],
 };
 // для своих упражнений точных данных нет — показываем группу мышц целиком
 const GROUP_MUSCLE = {
@@ -186,13 +186,15 @@ function mapHtml(pri, sec, mini) {
   const cls = {};
   sec.forEach(m => MUSCLE_PARTS[m].forEach(p => cls[p] = 's'));
   pri.forEach(m => MUSCLE_PARTS[m].forEach(p => cls[p] = 'p'));
-  const fig = (side, label) => `<svg viewBox="${side.box}" role="img" aria-label="${label}">${side.parts.map(([name, ...polys]) =>
-    polys.map(pts => `<polygon class="${cls[name] || ''}" points="${pts}"/>`).join('')).join('')}</svg>`;
-  const figs = `<div class="mm-figs">${fig(BODY.front, 'Вид спереди')}${fig(BODY.back, 'Вид сзади')}</div>`;
+  // фигура — мужская или женская, по полу из профиля; контуры мышц рисуются линиями, работающие мышцы закрашены
+  const body = BODY[profile().sex === 'f' ? 'f' : 'm'];
+  const fig = (side, label) => `<svg viewBox="${side.box}" role="img" aria-label="${label}">${side.parts.map(([name, ...paths]) =>
+    paths.map(d => `<path class="${cls[name] || (name === 'hair' ? 'h' : '')}" d="${d}"/>`).join('')).join('')}<path class="o" d="${side.outline}"/></svg>`;
+  const figs = `<div class="mm-figs">${fig(body.front, 'Вид спереди')}${fig(body.back, 'Вид сзади')}</div>`;
   if (mini) return `<div class="mm mini">${figs}</div>`;
   return `<div class="mm">${figs}
-    <div class="mm-leg"><div><i class="p"></i><span><b>Основные</b><br>${muscleNames(pri)}</span></div>
-    ${sec.length ? `<div><i class="s"></i><span><b>Вспомогательные</b><br>${muscleNames(sec)}</span></div>` : ''}</div></div>`;
+    <div class="mm-leg"><div><i class="p"></i><span><b>Основные:</b> ${muscleNames(pri)}</span></div>
+    ${sec.length ? `<div><i class="s"></i><span><b>Вспомогательные:</b> ${muscleNames(sec)}</span></div>` : ''}</div></div>`;
 }
 
 /* ---------- шторки, формы, уведомления ---------- */
@@ -1027,7 +1029,7 @@ function pgMore() {
     <button class="li" data-a="wipe" style="color:var(--danger)"><span>Удалить все данные</span></button>
   </section>
   <p class="muted small">Все данные хранятся только на этом устройстве. Делайте резервную копию, чтобы не потерять их при очистке браузера или смене телефона.</p>
-  <p class="muted small">Фотографии и данные о мышцах — открытая база free-exercise-db (общественное достояние); схема тела — react-body-highlighter (MIT).</p>
+  <p class="muted small">Фотографии и данные о мышцах — открытая база free-exercise-db (общественное достояние); схема тела — react-native-body-highlighter (MIT).</p>
   <p class="muted small">GymLog · ${db.workouts.length} тренировок · ${db.exercises.filter(e => !e.archived).length} упражнений</p>`;
 }
 const notFound = () => `<header class="top"><a class="ic" href="#/workouts">‹</a><h1>Не найдено</h1></header><div class="empty">Запись удалена или не существует</div>`;
