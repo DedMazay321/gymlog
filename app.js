@@ -818,13 +818,43 @@ function pgPick(first) {
 }
 
 /* ---------- экран: упражнения ---------- */
-const ef = { q: '', m: '' }, pf = { q: '', m: '' };
+// s — раздел «для женщин» / «для мужчин»; null значит «ещё не выбирали»: тогда берётся пол из профиля
+const ef = { q: '', m: '', s: null }, pf = { q: '', m: '', s: null };
+// Какие упражнения относятся к женским и мужским: смотрим, в каких программах каталога и подбора они встречаются.
+// Упражнения, которых нет ни в одной программе, распределяются по правилу: ноги, пресс, кардио и всё,
+// что делается с гантелями, на блоках, тренажёрах и с весом тела, — для всех; остальное со штангой — в мужской раздел.
+let EX_SEX = null;
+function exSexMap() {
+  if (EX_SEX) return EX_SEX;
+  const fem = new Set(), men = new Set();
+  const add = (set, keys) => keys.forEach(k => blockOf(k)[1].split(' ').forEach(t => set.add(parseInt(t, 10))));
+  CATALOG.forEach(c => { if (c[1] !== 'm') add(fem, c[6]); if (c[1] !== 'f') add(men, c[6]); });
+  Object.values(SPLITS.f).forEach(a => add(fem, a)); Object.values(SPLITS.m).forEach(a => add(men, a));
+  Object.values(SPLIT_CYCLES).forEach(o => { add(fem, o.f); add(men, o.m); });
+  Object.values(HOME_CYCLES).forEach(o => { add(fem, o.full); add(men, o.full); add(fem, o.ul.f); add(men, o.ul.m); });
+  const womenOnly = new Set([108, 113]);   // мост на одной ноге и отведение ноги на блоке — остальное «женское» подходит и мужчинам
+  return EX_SEX = BASE_EXERCISES.map(([, group, equip], i) => {
+    if (fem.has(i)) return womenOnly.has(i) ? 'f' : 'a';
+    if (men.has(i)) return 'm';
+    return ['Ноги', 'Пресс', 'Кардио'].includes(group) || equip !== 'Штанга' ? 'a' : 'm';
+  });
+}
+// 'f' — женский раздел, 'm' — мужской, 'a' — для всех (в том числе свои упражнения)
+const exSex = ex => { const m = /^e(\d+)$/.exec(ex.id); return (m && exSexMap()[+m[1]]) || 'a'; };
+const exSexLabel = ex => ({ f: 'чаще в женских программах', m: 'чаще в мужских программах' })[exSex(ex)] || '';
 function exBox(f) {
   const q = f.q.toLowerCase();
-  const list = db.exercises.filter(e => !e.archived && (!f.m || e.muscle === f.m) && (!q || e.name.toLowerCase().includes(q)))
+  if (f.s == null) f.s = db.profile ? profile().sex : '';
+  // при поиске по названию раздел не учитывается: ищем по всему справочнику
+  const all = db.exercises.filter(e => !e.archived && (!f.m || e.muscle === f.m) && (!q || e.name.toLowerCase().includes(q)));
+  const list = all.filter(e => q || !f.s || exSex(e) === 'a' || exSex(e) === f.s)
     .sort((a, b) => MUSCLES.indexOf(a.muscle) - MUSCLES.indexOf(b.muscle) || a.name.localeCompare(b.name, 'ru'));
   let last = null;
-  return `<div class="chips"><button class="chip ${f.m ? '' : 'on'}" data-a="exMuscle" data-m="">Все</button>
+  return `<div class="seg">${[['', 'Все'], ['f', 'Для женщин'], ['m', 'Для мужчин']].map(([v, l]) =>
+    `<button class="${f.s === v ? 'on' : ''}" data-a="exSexSet" data-v="${v}">${l}</button>`).join('')}</div>
+  <div class="muted small" style="margin:0 2px 10px">${q ? 'Поиск идёт по всему справочнику.' : f.s ? `Упражнения из ${f.s === 'f' ? 'женских' : 'мужских'} программ и общие для всех: ${list.length} из ${all.length}. Остальные — во вкладке «Все».`
+    : `Весь справочник: ${all.length} упражнений.`}</div>
+  <div class="chips"><button class="chip ${f.m ? '' : 'on'}" data-a="exMuscle" data-m="">Все мышцы</button>
     ${MUSCLES.map(m => `<button class="chip ${f.m === m ? 'on' : ''}" data-a="exMuscle" data-m="${m}">${m}</button>`).join('')}</div>
   ${list.map(e => (e.muscle !== last ? `<h2>${esc(last = e.muscle)}</h2>` : '') +
     `<button class="li" data-a="exTap" data-id="${e.id}">${thumb(e.id)}<span class="grow">${esc(e.name)}</span><span class="muted small">${esc(e.equip)}</span></button>`).join('')
@@ -875,7 +905,7 @@ function pgExercise(id) {
   if (metric !== 'vol') metric = 'rm';
   return `<header class="top"><button class="ic" data-a="back">‹</button><h1>${esc(ex.name)}</h1>
     <button class="ic" data-a="exMenu" data-id="${ex.id}">⋮</button></header>
-  <div class="sub">${esc([ex.muscle, ex.equip, k.name].filter(Boolean).join(' · '))}</div>
+  <div class="sub">${esc([ex.muscle, ex.equip, k.name, exSexLabel(ex)].filter(Boolean).join(' · '))}</div>
   ${demo(ex.id)}
   ${muscleMap(ex) ? `<section class="card">${muscleMap(ex)}</section>` : ''}
   ${techHtml(ex) ? `<h2>Техника</h2><section class="card">${techHtml(ex)}</section>` : ''}
@@ -1988,6 +2018,11 @@ const actions = {
   },
 
   /* упражнения */
+  exSexSet(d) {
+    const f = picker ? pf : ef;
+    f.s = d.v;
+    $(picker ? '#pexbox' : '#exbox').innerHTML = exBox(f);
+  },
   exMuscle(d) {
     const f = picker ? pf : ef;
     f.m = d.m;
