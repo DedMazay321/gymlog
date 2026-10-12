@@ -421,3 +421,7 @@ a.li { color: inherit; }
 .cyc .small { text-align: left; line-height: 1.5; }
 .cyc-ic { font-size: 44px; }
 div.li { cursor: default; }
+
+/* пример уведомления */
+.notif { background: var(--card2); border-radius: 14px; padding: 12px 14px; margin-top: 10px; display: grid; gap: 3px; border-left: 3px solid var(--accent); }
+.notif .small { line-height: 1.45; }

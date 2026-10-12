@@ -994,12 +994,23 @@ function pgMore() {
     <label class="switch"><span>Звук по окончании отдыха</span><input type="checkbox" data-in="setting" data-k="sound" ${s.sound ? 'checked' : ''}></label>
     <label class="switch"><span>Вибрация</span><input type="checkbox" data-in="setting" data-k="vibro" ${s.vibro ? 'checked' : ''}></label>
     <label class="switch"><span>Не гасить экран во время тренировки</span><input type="checkbox" data-in="setting" data-k="keepOn" ${s.keepOn !== false ? 'checked' : ''}></label>
-    ${window.Android && Android.setReminders ? `<label class="switch"><span>Напоминать о тренировках по расписанию</span><input type="checkbox" data-in="setting" data-k="remOn" ${s.remOn ? 'checked' : ''}></label>
-    <label class="switch"><span>Время напоминания</span><input type="time" class="inp" style="width:auto" data-in="setting" data-k="remTime" value="${esc(s.remTime || '18:00')}"></label>`
-      : `<div class="muted small" style="padding:8px 0">Напоминания о тренировках работают в приложении для Android версии 1.9 и новее.</div>`}
     <label class="switch"><span>Тема</span><select data-in="setting" data-k="theme">
       ${opt('dark', 'Тёмная', s.theme)}${opt('light', 'Светлая', s.theme)}${opt('auto', 'Как в системе', s.theme)}</select></label>
   </section>
+  <h2>Напоминания о тренировке</h2>
+  <section class="card">${(() => {
+    const c = remindCfg(), native = window.Android && Android.setReminders, p = activeProgram(), planned = p && p.week && Object.values(p.week).some(v => v != null);
+    return `${native ? '' : `<div class="hint" style="margin:0 0 8px">Уведомления приходят в приложении для Android версии 1.9 и новее. Здесь можно посмотреть, как они выглядят.</div>`}
+    <label class="switch"><span>Напоминать в дни тренировок</span><input type="checkbox" data-in="setting" data-k="remOn" ${c.on ? 'checked' : ''}></label>
+    <label class="switch"><span>Во сколько тренировка</span><input type="time" class="inp" style="width:auto" data-in="setting" data-k="trainTime" value="${c.time}"></label>
+    <label class="switch"><span>Когда напомнить</span><select data-in="setting" data-k="remLead">${REMIND_LEADS.map(([v, l]) => opt(v, l, c.lead)).join('')}</select></label>
+    <label class="switch"><span>Стиль</span><select data-in="setting" data-k="remStyle">${opt('fun', 'С подколами', c.style)}${opt('calm', 'Спокойный', c.style)}</select></label>
+    <div class="notif" id="remDemo"><div class="muted small">Пример уведомления</div><b>${esc(remindTitle(p && p.days[0] ? p.days[0].name : 'Верх тела'))}</b><div class="small" id="remText">${esc(remindText(remDemo, p && p.days[0] ? p.days[0].name : 'Верх тела'))}</div></div>
+    <div class="row two" style="margin-top:10px"><button class="btn" data-a="remNext">Другой пример</button>
+      ${native ? `<button class="btn" data-a="remTest">Прислать сейчас</button>` : ''}</div>
+    <div class="muted small" style="margin-top:10px">${planned ? 'Напоминания приходят в дни, назначенные в расписании текущей программы. Если в этот день тренировка уже была, уведомление не придёт.'
+      : 'Чтобы напоминания приходили, назначьте тренировки на дни недели: «Программы» → программа → «Расписание».'}</div>`;
+  })()}</section>
   <h2>Обновление</h2>
   <section class="card">
     <div class="switch" data-a="egg"><span>Версия приложения</span><b>${esc(ver.name || "—")}</b></div>
@@ -1306,19 +1317,32 @@ function planCard() {
     <button class="btn ${pl.today ? 'primary' : ''} block" style="margin:12px 0 0" data-a="start" data-p="${pl.p.id}" data-d="${pl.di}">▶ ${pl.today ? 'Начать тренировку' : 'Начать заранее'}</button></section>`;
 }
 // Напоминания ставит Android-оболочка: передаём ей время ближайших тренировок на неделю вперёд.
+// Настройки напоминаний. Раньше хранилось время самого уведомления (remTime) — из него получаем время тренировки.
+function remindCfg() {
+  const s = db.settings, shift = t => { const [h, m] = t.split(':').map(Number); return String((h + 1) % 24).padStart(2, '0') + ':' + String(m).padStart(2, '0'); };
+  return { on: !!s.remOn, time: s.trainTime || (s.remTime ? shift(s.remTime) : '19:00'), lead: s.remLead != null ? +s.remLead : 60, style: s.remStyle || 'fun' };
+}
+// Текст уведомления: с подколом или спокойный. n выбирает вариант — у каждого дня свой, без повторов подряд.
+function remindText(n, dayName) {
+  const c = remindCfg(), when = (REMIND_LEADS.find(l => l[0] === c.lead) || REMIND_LEADS[3])[2];
+  if (c.style === 'calm') return `Сегодня тренировка ${when}: ${dayName.replace(/^День \d+ · /, '')}.`;
+  return REMIND_JOKES[((n % REMIND_JOKES.length) + REMIND_JOKES.length) % REMIND_JOKES.length].replace('{when}', when);
+}
+const remindTitle = dayName => 'Сегодня: ' + dayName.replace(/^День \d+ · /, '');
 function syncReminders() {
   if (!(window.Android && Android.setReminders)) return;
-  const s = db.settings, list = [], p = activeProgram();
-  if (s.remOn && p && p.week) {
-    const [hh, mm] = (s.remTime || '18:00').split(':').map(Number), now = new Date();
+  const c = remindCfg(), list = [], p = activeProgram();
+  if (c.on && p && p.week) {
+    const [hh, mm] = c.time.split(':').map(Number), now = new Date();
     for (let k = 0; k < 7; k++) {
-      const at = new Date(now.getFullYear(), now.getMonth(), now.getDate() + k, hh, mm).getTime(), di = p.week[wdOf(at)];
+      const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() + k, hh, mm).getTime(), at = start - c.lead * 60000, di = p.week[wdOf(start)];
       if (di == null || !p.days[di] || at <= Date.now()) continue;
       if (k === 0 && db.workouts.some(w => w.pid === p.id && sameDay(w.start, Date.now()))) continue;
-      list.push({ at, text: p.days[di].name });
+      // номер дня от начала эпохи: шутки идут по кругу и не повторяются в соседние дни
+      list.push({ at, title: remindTitle(p.days[di].name), text: remindText(Math.floor(start / DAY) * 7 % REMIND_JOKES.length, p.days[di].name) });
     }
   }
-  Android.setReminders(JSON.stringify(list), !!s.remOn);
+  Android.setReminders(JSON.stringify(list), c.on);
 }
 
 /* ---------- питание, вода и сон ---------- */
@@ -1621,7 +1645,7 @@ const exFields = e => [
   { name: 'note', label: 'Свои заметки по технике (необязательно)', type: 'textarea', value: e.note || '' },
 ];
 
-let eggTaps = 0, eggTimer;
+let eggTaps = 0, eggTimer, remDemo = Math.floor(Math.random() * 30);
 const actions = {
   sheetClose: () => closeSheet(),
   // Пасхалка: пять быстрых нажатий на приветствие на главном экране или на строку с версией в «Ещё».
@@ -2004,6 +2028,20 @@ const actions = {
   },
   pActive(d) { db.activeProgram = d.p; save(); syncReminders(); render(); toast('Программа выбрана текущей'); },
 
+  /* напоминания */
+  remNext(d) {
+    if (!d.keep) remDemo++;
+    const p = activeProgram(), el = $('#remText');
+    if (el) el.textContent = remindText(remDemo, p && p.days[0] ? p.days[0].name : 'Верх тела');
+  },
+  // пробное уведомление через 10 секунд: так проще всего убедиться, что они разрешены и приходят
+  remTest() {
+    const p = activeProgram(), name = p && p.days[0] ? p.days[0].name : 'Пробное напоминание';
+    Android.setReminders(JSON.stringify([{ at: Date.now() + 10000, title: remindTitle(name), text: remindText(remDemo, name) }]), true);
+    toast('Уведомление придёт примерно через 10 секунд — можно свернуть приложение');
+    setTimeout(syncReminders, 20000);
+  },
+
   /* справочник и дневник цикла */
   supF(d) { supF = +d.v; render(); },
   mealDay(d) { mealDay = d.v; render(); },
@@ -2142,7 +2180,8 @@ const inputs = {
     $(picker ? '#pexbox' : '#exbox').innerHTML = exBox(f);
   },
   setting(d, el) {
-    db.settings[d.k] = el.type === 'checkbox' ? el.checked : d.k === 'rest' ? +el.value : el.value;
+    db.settings[d.k] = el.type === 'checkbox' ? el.checked : d.k === 'rest' || d.k === 'remLead' ? +el.value : el.value;
+    if (d.k === 'remLead' || d.k === 'remStyle') actions.remNext({ keep: 1 });
     save(); document.documentElement.dataset.theme = db.settings.theme; syncWake(); syncReminders();
   },
 };
