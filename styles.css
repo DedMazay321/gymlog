@@ -406,3 +406,18 @@ a.li { color: inherit; }
 @keyframes egg-in { from { opacity: 0; } }
 @keyframes egg-pulse { 50% { transform: scale(1.08); } }
 @keyframes egg-rise { 0% { transform: translateY(0) rotate(-8deg); opacity: 0; } 12% { opacity: 1; } 100% { transform: translateY(-110vh) rotate(12deg); opacity: 0; } }
+
+/* ---------- версия 1.16: справочник, рацион, дневник цикла ---------- */
+.proof { flex: none; font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 999px; white-space: nowrap; color: #fff; }
+.proof.ok { background: var(--ok); }
+.proof.mid { background: #5b7fa6; }
+.proof.low { background: var(--muted); }
+.sup-top { display: flex; align-items: center; gap: 14px; margin: -2px 2px 4px; }
+.sup-top > span:first-child { font-size: 40px; }
+.card.term { display: grid; gap: 4px; }
+.card.term .small { line-height: 1.5; }
+.cyc { text-align: center; }
+.cyc b { display: block; font-size: 20px; margin-top: 2px; }
+.cyc .small { text-align: left; line-height: 1.5; }
+.cyc-ic { font-size: 44px; }
+div.li { cursor: default; }

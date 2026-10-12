@@ -440,7 +440,7 @@ function pgWorkouts() {
       return `Тренировок на этой неделе: ${c}${st > 1 ? ` · серия ${st} нед. подряд 🔥` : ''}`; })()}</div></section>
   <h2>Календарь</h2>
   ${calendar()}
-  ${waterCard()}
+  ${cycleCard()}${waterCard()}
   ${list.length ? `<h2>Прошлая тренировка</h2>${workoutRow(list[0])}
     <a class="btn block ghost" href="#/history">Вся история</a>` : tip('home', 'Когда закончите первую тренировку, здесь появятся история, графики прогресса и достижения.')}`;
 }
@@ -979,6 +979,13 @@ function pgMore() {
   <section class="card">
     <a class="li" href="#/health"><span>🥗 Питание, вода и сон</span><span class="muted">›</span></a>
     <a class="li" href="#/stretch"><span>🧘 Разминка и растяжка</span><span class="muted">›</span></a>
+    ${profile().sex === 'f' ? `<a class="li" href="#/cycle"><span>🌙 Дневник цикла</span><span class="muted">›</span></a>` : ''}
+  </section>
+  <h2>Справочник</h2>
+  <section class="card">
+    <a class="li" href="#/supps"><span>💊 Спортивные добавки</span><span class="muted">›</span></a>
+    <a class="li" href="#/meals"><span>🍽️ Примеры рациона</span><span class="muted">›</span></a>
+    <a class="li" href="#/glossary"><span>📖 Словарь терминов</span><span class="muted">›</span></a>
   </section>
   <h2>Настройки</h2>
   <section class="card">
@@ -1368,6 +1375,7 @@ function pgHealth() {
     <label class="field"><span>Активность</span>${sel('act', ACTIVITY)}</label>
     <label class="field"><span>Цель</span>${sel('goal', [['loss', 'Похудение'], ['keep', 'Поддержание веса'], ['gain', 'Набор мышечной массы']])}</label>
     <div id="nutri">${nutriHtml()}</div>
+    <div class="row two" style="margin-top:12px"><a class="btn" href="#/meals">🍽️ Примеры рациона</a><a class="btn" href="#/supps">💊 Добавки</a></div>
   </section>
   <h2>Вода</h2>
   <div id="waterbox">${waterCard(true)}</div>
@@ -1380,6 +1388,127 @@ function pgHealth() {
     : `<div class="empty small">Записывайте, сколько спали, — здесь появится график за 14 дней</div>`}
     <button class="btn block primary" style="margin:12px 0 0" data-a="sleepAdd">Записать сон</button>
     <div class="muted small" style="margin-top:8px">Для восстановления после тренировок обычно нужно 7–9 часов.</div></section>`;
+}
+
+/* ---------- справочник: спортивные добавки ---------- */
+let supF = 0;
+const proofBadge = p => `<span class="proof ${PROOF[p][1]}">${PROOF[p][0]}</span>`;
+const medNote = `<p class="muted small">Это общая справка, а не назначение. При беременности, хронических заболеваниях и приёме лекарств посоветуйтесь с врачом, прежде чем что-то принимать.</p>`;
+function pgSupps(id) {
+  const s = SUPPS.find(x => x.id === id);
+  if (s) {
+    const sec = (title, text) => `<h2>${title}</h2><section class="card">${text}</section>`;
+    return `<header class="top"><a class="ic" href="#/supps">‹</a><h1>${s.name}</h1></header>
+    <div class="sup-top"><span>${s.icon}</span>${proofBadge(s.proof)}</div>
+    ${sec('Что это', s.what)}${sec('Для чего', s.why)}${sec('Кому имеет смысл', s.who)}${sec('Как принимать', s.how)}
+    ${s.id === 'protein' ? `<div class="hint" style="margin-bottom:10px">Ваша норма — около ${nutrition().protein} г белка в день.
+      Как набрать её обычной едой — в разделе <a href="#/meals"><u>«Примеры рациона»</u></a>.</div>` : ''}
+    ${sec('Чего ожидать', s.expect)}${sec('Когда не стоит', s.avoid)}${medNote}`;
+  }
+  const list = SUPPS.filter(x => !supF || x.proof === supF);
+  return `<header class="top"><a class="ic" href="#/more">‹</a><h1>Спортивные добавки</h1></header>
+  <section class="card"><b>С чего начать</b>
+    <div class="small" style="margin-top:6px">Результат дают тренировки, еда и сон. Добавки помогают совсем немного и только когда основа уже налажена.
+    Большинству достаточно обычной еды; из всего списка по-настоящему доказаны протеин (если не хватает белка), креатин и кофеин.</div></section>
+  <div class="chips"><button class="chip ${supF ? '' : 'on'}" data-a="supF" data-v="0">Все</button>
+    ${[3, 2, 1].map(p => `<button class="chip ${supF === p ? 'on' : ''}" data-a="supF" data-v="${p}">${PROOF[p][0]}</button>`).join('')}</div>
+  ${list.map(x => `<a class="card link award" href="#/supps/${x.id}"><div class="aw-ic">${x.icon}</div><div class="grow"><div class="ex-head"><b>${x.name}</b>${proofBadge(x.proof)}</div>
+    <div class="muted small">${x.why.split('. ')[0].replace(/\.$/, '')}.</div></div></a>`).join('')}
+  ${medNote}`;
+}
+
+/* ---------- справочник: словарь терминов ---------- */
+let glosQ = '';
+function glosHtml() {
+  const q = glosQ.trim().toLowerCase();
+  const list = GLOSSARY.filter(g => !q || g[0].toLowerCase().includes(q) || g[1].toLowerCase().includes(q));
+  let last = null;
+  return list.map(([term, text, group]) => (group !== last ? `<h2>${last = group}</h2>` : '') +
+    `<section class="card term"><b>${term}</b><div class="small">${text}</div></section>`).join('') || `<div class="empty">Такого термина в словаре нет</div>`;
+}
+function pgGlossary() {
+  return `<header class="top"><a class="ic" href="#/more">‹</a><h1>Словарь терминов</h1></header>
+  <input class="search" type="search" placeholder="Поиск: суперсет, тоннаж, 1ПМ…" data-in="glosQ" value="${esc(glosQ)}">
+  <div id="glosbox">${glosHtml()}</div>`;
+}
+
+/* ---------- примеры рациона под рассчитанную норму ---------- */
+let mealDay = 'usual';
+// Пересчитывает порции варианта дня под нужные калории и считает, что получилось.
+function mealPlan(day, kcal) {
+  const base = day.meals.reduce((a, [, items]) => a + items.reduce((b, [f, g]) => b + FOODS[f][1] * g / 100, 0), 0);
+  const k = Math.max(.6, Math.min(1.9, kcal / base));
+  let tk = 0, tp = 0;
+  const meals = day.meals.map(([name, items]) => [name, items.map(([f, g]) => {
+    const step = f === 'oil' || f === 'honey' || f === 'nuts' ? 5 : 10;
+    const count = f === 'egg' ? Math.max(1, Math.round(g * k / 55)) : 0;      // яйца считаем штуками
+    const grams = count ? count * 55 : Math.max(step, Math.round(g * k / step) * step);
+    tk += FOODS[f][1] * grams / 100; tp += FOODS[f][2] * grams / 100;
+    return [FOODS[f][0], count ? count + ' шт.' : grams + (f === 'milk' ? ' мл' : ' г')];
+  })]);
+  return { meals, kcal: Math.round(tk / 10) * 10, protein: Math.round(tp) };
+}
+function pgMeals() {
+  const x = nutrition(), day = MEAL_DAYS.find(d => d.id === mealDay), m = mealPlan(day, x.kcal), lack = x.protein - m.protein;
+  return `<header class="top"><a class="ic" href="#/health">‹</a><h1>Примеры рациона</h1></header>
+  <section class="card"><b>Ваша норма: ${x.kcal} ккал и ${x.protein} г белка</b>
+    <div class="muted small" style="margin-top:4px">Порции ниже пересчитаны под неё. Параметры меняются в разделе «Питание, вода и сон».</div></section>
+  <div class="chips">${MEAL_DAYS.map(d => `<button class="chip ${mealDay === d.id ? 'on' : ''}" data-a="mealDay" data-v="${d.id}">${d.name}</button>`).join('')}</div>
+  ${m.meals.map(([name, items]) => `<h2>${name}</h2><section class="card">${items.map(([food, amount]) =>
+    `<div class="li"><span>${food}</span><b>${amount}</b></div>`).join('')}</section>`).join('')}
+  <section class="card"><b>Итого за день: около ${m.kcal} ккал и ${m.protein} г белка</b>
+    ${lack > 10 ? `<div class="hint">До нормы не хватает примерно ${lack} г белка. Добавьте порцию творога (200 г — 34 г белка),
+      куриной грудки (100 г — 31 г) или протеина (порция — 20–25 г).</div>` : `<div class="muted small" style="margin-top:4px">Норма белка набирается обычной едой, без добавок.</div>`}</section>
+  <p class="muted small">Это пример, а не диета: продукты можно менять на похожие — курицу на индейку или рыбу, гречку на рис или макароны.
+    Калорийность взята по усреднённым таблицам; крупы и макароны указаны в сухом виде.</p>`;
+}
+
+/* ---------- дневник цикла ---------- */
+const dayTs = s => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d).getTime(); };
+// Длина цикла — среднее по последним записям (если их мало — 28 дней); фаза считается от последнего начала.
+function cycleInfo() {
+  const starts = [...((db.cycle || {}).starts || [])].sort();
+  if (!starts.length) return null;
+  const gaps = starts.slice(1).map((s, i) => Math.round((dayTs(s) - dayTs(starts[i])) / DAY)).filter(g => g >= 18 && g <= 45).slice(-6);
+  const len = gaps.length ? Math.round(gaps.reduce((a, b) => a + b, 0) / gaps.length) : 28;
+  const last = dayTs(starts[starts.length - 1]), passed = Math.round((dayTs(today()) - last) / DAY), day = passed + 1, ov = len - 14;
+  const late = passed >= len;
+  const phase = late ? 'pms' : day <= 5 ? 'period' : day < ov - 1 ? 'follicular' : day <= ov + 1 ? 'ovulation' : day <= len - 5 ? 'luteal' : 'pms';
+  return { len, day, phase, late, next: last + len * DAY, left: len - passed, measured: gaps.length };
+}
+function cycleCard() {
+  const c = profile().sex === 'f' && db.settings.cycleHome !== false ? cycleInfo() : null;
+  if (!c || c.day > c.len + 10) return '';
+  const [name, icon, tip] = CYCLE_PHASES[c.phase];
+  return `<a class="card link" href="#/cycle"><div class="ex-head"><b>${icon} День ${c.day} цикла · ${name.toLowerCase()}</b><span class="muted small">подробнее</span></div>
+    <div class="muted small" style="margin-top:4px">${tip.split('. ')[0].replace(/\.$/, '')}.</div></a>`;
+}
+function pgCycle() {
+  const c = cycleInfo(), starts = [...((db.cycle || {}).starts || [])].sort().reverse();
+  const add = `<button class="btn block primary" data-a="cycleAdd">Отметить начало менструации</button>`;
+  const note = `<p class="muted small">Расчёт приблизительный: цикл у каждой женщины свой и может меняться. Дневник помогает планировать нагрузку
+    и не подходит для контрацепции или диагностики. При нерегулярном цикле или сильных болях обратитесь к врачу. Записи хранятся только на этом устройстве.</p>`;
+  if (!c) return `<header class="top"><a class="ic" href="#/more">‹</a><h1>Дневник цикла</h1></header>
+    <section class="card"><b>🌙 Тренировки с учётом цикла</b>
+      <div class="small" style="margin-top:6px">Силы и самочувствие меняются в течение цикла. Отметьте первый день менструации —
+      приложение будет показывать текущую фазу и подсказывать, когда можно работать в полную силу, а когда лучше сбавить.</div></section>
+    ${add}${note}`;
+  const [name, icon, tip] = CYCLE_PHASES[c.phase], when = new Date(c.next).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
+  return `<header class="top"><a class="ic" href="#/more">‹</a><h1>Дневник цикла</h1></header>
+  <section class="card cyc"><div class="cyc-ic">${icon}</div><div class="muted small">День ${c.day} из ${c.len}</div><b>${name}</b>
+    <div class="bar" style="margin:12px 0"><i style="width:${Math.min(100, Math.round(c.day / c.len * 100))}%"></i></div>
+    <div class="small">${tip}</div></section>
+  <section class="card"><b>${c.late ? `Менструация ожидалась ${when}` : `Следующая менструация — около ${when}`}</b>
+    <div class="muted small" style="margin-top:4px">${c.late ? 'Если она уже началась — отметьте это, чтобы расчёт продолжился.' : `Примерно через ${c.left} дн.`}
+      Длина цикла: ${c.len} дн. ${c.measured ? `(среднее по ${c.measured + 1} записям)` : '(стандартная, уточнится после второй записи)'}.</div></section>
+  ${add}
+  <h2>Фазы и тренировки</h2>
+  ${['period', 'follicular', 'ovulation', 'luteal', 'pms'].map(k => `<section class="card term ${k === c.phase ? 'active' : ''}"><b>${CYCLE_PHASES[k][1]} ${CYCLE_PHASES[k][0]}</b>
+    <div class="small">${CYCLE_PHASES[k][2]}</div></section>`).join('')}
+  <h2>Записи</h2>
+  <section class="card">${starts.map(s => `<button class="li" data-a="cycleDel" data-v="${s}"><span>${fmtDate(dayTs(s))}</span><span class="muted small">удалить</span></button>`).join('')}
+    <label class="switch"><span>Показывать фазу на главном экране</span><input type="checkbox" data-in="setting" data-k="cycleHome" ${db.settings.cycleHome !== false ? 'checked' : ''}></label></section>
+  ${note}`;
 }
 
 /* ---------- разминка и растяжка ---------- */
@@ -1453,8 +1582,8 @@ window.onNativeUpdate = r => {
 };
 
 /* ---------- маршруты ---------- */
-const pages = { workouts: pgWorkouts, workout: pgWorkout, programs: pgPrograms, program: pgProgram, exercises: pgExercises, exercise: pgExercise, measures: pgMeasures, more: pgMore, stats: pgStats, awards: pgAwards, health: pgHealth, stretch: pgStretch, history: pgHistory, progress: pgProgress, catalog: pgCatalog, pick: () => pgPick(false) };
-const tabOf = { workout: 'workouts', program: 'programs', exercise: 'exercises', stats: 'progress', awards: 'progress', history: 'progress', measures: 'progress', catalog: 'programs', pick: 'programs', health: 'more', stretch: 'more' };
+const pages = { workouts: pgWorkouts, workout: pgWorkout, programs: pgPrograms, program: pgProgram, exercises: pgExercises, exercise: pgExercise, measures: pgMeasures, more: pgMore, stats: pgStats, awards: pgAwards, health: pgHealth, stretch: pgStretch, history: pgHistory, progress: pgProgress, catalog: pgCatalog, pick: () => pgPick(false), supps: pgSupps, glossary: pgGlossary, meals: pgMeals, cycle: pgCycle };
+const tabOf = { workout: 'workouts', program: 'programs', exercise: 'exercises', stats: 'progress', awards: 'progress', history: 'progress', measures: 'progress', catalog: 'programs', pick: 'programs', health: 'more', stretch: 'more', supps: 'more', glossary: 'more', meals: 'more', cycle: 'more' };
 function render() {
   const [page, id, sub] = (location.hash.slice(2) || 'workouts').split('/');
   const fn = pages[page] || pgWorkouts;
@@ -1875,6 +2004,24 @@ const actions = {
   },
   pActive(d) { db.activeProgram = d.p; save(); syncReminders(); render(); toast('Программа выбрана текущей'); },
 
+  /* справочник и дневник цикла */
+  supF(d) { supF = +d.v; render(); },
+  mealDay(d) { mealDay = d.v; render(); },
+  async cycleAdd() {
+    const r = await form('Начало менструации', [{ name: 'date', label: 'Первый день', type: 'date', value: today() }]);
+    if (!r || !r.date) return;
+    if (dayTs(r.date) > dayTs(today())) return toast('Дата не может быть в будущем');
+    const starts = new Set((db.cycle || {}).starts || []);
+    starts.add(r.date);
+    db.cycle = { starts: [...starts].sort() };
+    save(); render();
+  },
+  async cycleDel(d) {
+    if (!await confirmDlg('Удалить эту запись?')) return;
+    db.cycle = { starts: (db.cycle.starts || []).filter(x => x !== d.v) };
+    save(); render();
+  },
+
   /* вода, сон, растяжка */
   waterAdd(d) {
     db.water = db.water || {};
@@ -1978,6 +2125,7 @@ const actions = {
 };
 
 const inputs = {
+  glosQ(d, el) { glosQ = el.value; $('#glosbox').innerHTML = glosHtml(); },
   catF(d, el) { cf[d.k] = el.value; $('#catbox').innerHTML = catListHtml(); },
   obNum(d, el) { const v = num(el.value); if (v != null) ob[d.k] = v; },
   prof(d, el) {

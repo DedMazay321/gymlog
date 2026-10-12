@@ -1,11 +1,12 @@
 {
- "version": 16,
- "name": "1.15",
- "notes": "Мелкие улучшения",
+ "version": 17,
+ "name": "1.16",
+ "notes": "Справочник добавок, словарь терминов, примеры рациона и дневник цикла",
  "files": {
-  "app.js": "95f03bd37a7d56f22adc0c947bac71234cff96b5c1f06c8e9c7b9702aa8aa8b0",
+  "app.js": "7909f601e49a26e568d2ad9d0500e0ab35c2871e33065418bb41919ddad9327b",
   "body.js": "e8f111b0abf55e54d15c1274a7c2e8c3fc263d0a365bc83b67de7379a0c29600",
   "exercises.js": "b0449393d7b95ec4d4c3e5db13e0f83b72634990f0c64c472e06d4a56388c1f6",
+  "guide.js": "2b33ebb6be55869e0fdf2942ec1689af1d67278769dc054cc5e56e74e52e8a6b",
   "icons/icon-192.png": "fcd36f043b1ff35b61e33747e6b21380e7607a1eb8baa957fa1018264d6a8b70",
   "icons/icon-512.png": "fc1fc021b05f4b5c162a7c84bcfd903b9336c93ec9a6f6ff9050b3673bbfec65",
   "img/e0_0.jpg": "44ba81b3ea124f625c555ae812b37263f82ae460749bbc9ebbeb55a6309f6663",
@@ -387,11 +388,11 @@
   "img/s8_1.jpg": "bebe29fab84e28573cbc3bc47af34c6d0f6cdce8f26e942c87bde08352e05f71",
   "img/s9_0.jpg": "29ae8af3f71c422b5bf0491404bd80c33fd57aa0efe6f559e7ff3f51f6f5038b",
   "img/s9_1.jpg": "d54074a718c16ef774b8725877d3a0b09f92a16a573a2a3eac5490f9ef14a946",
-  "index.html": "229fe66294f6a773192ad934214e3371bf87b01d42bad2c75d4f7c2b97c0ed2b",
+  "index.html": "dd61badf6aedfa5c7a23fb1bb069b1935a5f1d254eca91a31d07a236eb9d3d22",
   "manifest.json": "94842a0eaf89b834d9943206744fba3df196f42d84693cd9b17c2d14095c52e0",
   "programs.js": "5612639d216114f5957b9aadc8b0cc6394bbb64aabe097eb22ed3119fc4ead2e",
   "stretch.js": "ef1fa9057c00f5dcc3c0dcd116e20c0435c796ce7357a5bf5b84450a03169e36",
-  "styles.css": "026e6f32b4540693d50fa357ecba749f2e5d9a178f6de3f20266cf9265b40528",
+  "styles.css": "9a9f5a45d605be973581555893de6a018b2fc2a38cc84b1b37fd8aef683dec56",
   "sw.js": "55ea225a9c6f5a5541c222872bda93f70fd72886921db6b0d6cb01a12919a8a8",
   "tech.js": "5a34dcadc1f9f22b7313be244e98178f788d4e56aa3627ad4e20a4430f4cd2fa"
  }
