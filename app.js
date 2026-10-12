@@ -423,7 +423,7 @@ function pgWorkouts() {
   if (isNew()) return pgPick(true);
   const act = activeW(), list = sortedW().filter(w => w.end), pl = nextPlan(), now = new Date();
   const hello = now.getHours() < 5 ? 'Доброй ночи' : now.getHours() < 12 ? 'Доброе утро' : now.getHours() < 18 ? 'Добрый день' : 'Добрый вечер';
-  return `<header class="top"><div class="grow"><h1>${hello}</h1>
+  return `<header class="top"><div class="grow"><h1 data-a="egg">${hello}</h1>
     <div class="muted small">${now.toLocaleDateString('ru-RU', { weekday: 'long', day: 'numeric', month: 'long' }).replace(/^./, c => c.toUpperCase())}</div></div></header>
   ${act ? `<a class="card link active big" href="#/workout/${act.id}"><div class="muted small">Идёт тренировка</div><b>${esc(act.name)}</b>
       <div class="muted small">Прошло <span data-elapsed="${act.start}">${fmtDur(Date.now() - act.start)}</span></div>
@@ -995,7 +995,7 @@ function pgMore() {
   </section>
   <h2>Обновление</h2>
   <section class="card">
-    <div class="switch"><span>Версия приложения</span><b>${esc(ver.name || "—")}</b></div>
+    <div class="switch" data-a="egg"><span>Версия приложения</span><b>${esc(ver.name || "—")}</b></div>
     ${NATIVE ? `<label class="field"><span>Адрес сервера обновлений</span>
       <input type="text" inputmode="url" data-in="setting" data-k="updUrl" value="${esc(updUrl())}" placeholder="https://…"></label>
     <label class="switch"><span>Проверять при запуске</span><input type="checkbox" data-in="setting" data-k="updAuto" ${s.updAuto !== false ? "checked" : ""}></label>` : ""}
@@ -1492,8 +1492,23 @@ const exFields = e => [
   { name: 'note', label: 'Свои заметки по технике (необязательно)', type: 'textarea', value: e.note || '' },
 ];
 
+let eggTaps = 0, eggTimer;
 const actions = {
   sheetClose: () => closeSheet(),
+  // Пасхалка: пять быстрых нажатий на приветствие на главном экране или на строку с версией в «Ещё».
+  egg() {
+    clearTimeout(eggTimer);
+    eggTimer = setTimeout(() => eggTaps = 0, 1500);
+    if (++eggTaps < 5) return;
+    eggTaps = 0;
+    const el = document.createElement('div');
+    el.className = 'egg';
+    el.innerHTML = Array.from({ length: 26 }, () => `<i style="left:${Math.round(Math.random() * 94)}%;font-size:${18 + Math.round(Math.random() * 26)}px;animation-duration:${(3 + Math.random() * 3).toFixed(1)}s;animation-delay:${(Math.random() * 2.5).toFixed(1)}s">❤️</i>`).join('') + '<b>Всё для тебя ❤️</b>';
+    el.onclick = () => el.remove();
+    document.body.appendChild(el);
+    if (navigator.vibrate) navigator.vibrate([60, 80, 60]);
+    setTimeout(() => el.remove(), 9000);
+  },
   back: () => history.length > 1 ? history.back() : go('#/exercises'),
   sheetRes: d => closeSheet(d.v),
   restAdd: d => { if (rest) { rest.end += d.v * 1000; rest.total = Math.max(1, rest.total + +d.v); rest.fired = false; saveRest(); drawRest(); } },
