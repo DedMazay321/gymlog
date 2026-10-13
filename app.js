@@ -933,6 +933,14 @@ function pgExercise(id) {
   ${demo(ex.id)}
   ${muscleMap(ex) ? `<section class="card">${muscleMap(ex)}</section>` : ''}
   ${techHtml(ex) ? `<h2>Техника</h2><section class="card">${techHtml(ex)}</section>` : ''}
+  ${(() => {
+    const all = analogsOf(ex), show = analogAll === ex.id ? all : all.slice(0, 5), main = exMuscles(ex)[0][0];
+    return all.length ? `<h2>Чем заменить</h2><section class="card">
+      <div class="muted small" style="margin-bottom:4px">Если упражнение не подходит или снаряд занят — ${main ? `вот другие на ту же мышцу (${MUSCLE_RU[main]})` : 'вот похожие'}.</div>
+      ${show.map(e => `<button class="li" data-a="exTap" data-id="${e.id}">${thumb(e.id)}<span class="grow">${esc(e.name)}</span><span class="muted small">${esc(e.equip)}</span></button>`).join('')}
+      ${all.length > show.length ? `<button class="btn sm block" style="margin:10px 0 0" data-a="analogMore" data-id="${ex.id}">Показать все варианты · ${all.length}</button>` : ''}
+    </section>` : '';
+  })()}
   <div class="tiles">
     <div class="tile"><b>${ser.length}</b><span>тренировок</span></div>
     <div class="tile"><b>${all.length ? setTxt(best, ex.kind) : '—'}</b><span>лучший подход</span></div>
@@ -1094,11 +1102,17 @@ function techHtml(ex) {
   return `${ex.note ? `<div class="note">${esc(ex.note)}</div>` : ''}${t ? `<ol class="tech">${t.slice(0, -1).map(s => `<li>${s}</li>`).join('')}</ol>
     <div class="hint">${t[t.length - 1]}</div>` : ''}`;
 }
-// Аналоги — упражнения того же типа на ту же основную мышцу.
+// Аналоги — упражнения того же типа на ту же основную мышцу. Сначала идут подходящие к выбранному разделу
+// (женскому или мужскому) и с другим оборудованием: если занят тренажёр, полезнее вариант с гантелями, чем такой же тренажёр.
+function analogsOf(ex) {
+  const main = exMuscles(ex)[0][0], sex = ctxSex() || (db.profile ? profile().sex : '');
+  const rank = e => (sex && exSex(e) !== 'a' && exSex(e) !== sex ? 2 : 0) + (e.equip === ex.equip ? 1 : 0);
+  return db.exercises.filter(e => !e.archived && e.id !== ex.id && e.kind === ex.kind && exMuscles(e)[0][0] === main)
+    .sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name, 'ru'));
+}
+let analogAll = null;   // id упражнения, для которого развёрнут полный список замен
 async function pickAnalog(exId) {
-  const ex = exById(exId), main = exMuscles(ex)[0][0];
-  const list = db.exercises.filter(e => !e.archived && e.id !== exId && e.kind === ex.kind && exMuscles(e)[0][0] === main)
-    .sort((a, b) => a.name.localeCompare(b.name, 'ru'));
+  const ex = exById(exId), main = exMuscles(ex)[0][0], list = analogsOf(ex);
   const v = await sheet(`<h3>Чем заменить</h3>
     <div class="muted small" style="margin:-8px 0 8px">${esc(ex.name)}${main ? ' — основная мышца: ' + MUSCLE_RU[main] : ''}</div>
     ${list.map(e => `<button class="li" data-a="sheetRes" data-v="${e.id}">${thumb(e.id)}<span class="grow">${esc(e.name)}</span>
@@ -1398,7 +1412,9 @@ function syncReminders() {
       list.push({ at, title: remindTitle(p.days[di].name), text: remindText(Math.floor(start / DAY) * 7 % REMIND_JOKES.length, p.days[di].name) });
     }
   }
-  Android.setReminders(JSON.stringify(list), c.on);
+  // ближайшие по времени — первыми: если мест в очереди не хватит, отсекутся самые дальние
+  const supp = suppSchedule(), all = [...list, ...supp].sort((x, y) => x.at - y.at).slice(0, remindLimit());
+  Android.setReminders(JSON.stringify(all), c.on || suppRems().some(r => r.on));
 }
 
 /* ---------- питание, вода и сон ---------- */
@@ -1470,6 +1486,63 @@ function pgHealth() {
     <div class="muted small" style="margin-top:8px">Для восстановления после тренировок обычно нужно 7–9 часов.</div></section>`;
 }
 
+/* ---------- напоминания о приёме добавок ---------- */
+// Запись: { id, supp — id добавки из справочника или 'other', name — своё название, dose, time 'ЧЧ:ММ', days — номера дней недели (0 = Пн), on }
+const suppRems = () => db.suppRem || (db.suppRem = []);
+const suppName = r => r.supp === 'other' ? (r.name || 'Добавка') : (SUPPS.find(s => s.id === r.supp) || { name: 'Добавка' }).name;
+const suppIcon = r => r.supp === 'other' ? '💊' : (SUPPS.find(s => s.id === r.supp) || { icon: '💊' }).icon;
+const suppTitle = r => `${suppIcon(r)} ${suppName(r)}${r.dose ? ' · ' + r.dose : ''}`;
+// n выбирает вариант текста: у каждого дня свой, чтобы шутка не повторялась два дня подряд
+function suppText(r, n) {
+  const own = SUPP_JOKES[r.supp], list = own || SUPP_JOKES_ANY;
+  return list[((n % list.length) + list.length) % list.length].replace('{name}', suppName(r));
+}
+const daysLabel = days => days.length === 7 ? 'каждый день' : days.length ? [...days].sort().map(d => WD[d].toLowerCase()).join(', ') : 'дни не выбраны';
+// Сколько уведомлений Android может держать в очереди: старые версии оболочки — 7, новые сообщают сами.
+const remindLimit = () => window.Android && Android.reminderLimit ? Android.reminderLimit() : 7;
+function suppSchedule() {
+  const list = [], now = new Date();
+  suppRems().filter(r => r.on && r.days.length).forEach((r, ri) => {
+    const [hh, mm] = r.time.split(':').map(Number);
+    for (let k = 0; k < 14; k++) {
+      const at = new Date(now.getFullYear(), now.getMonth(), now.getDate() + k, hh, mm).getTime();
+      if (at <= Date.now() || !r.days.includes(wdOf(at))) continue;
+      list.push({ at, title: suppTitle(r), text: suppText(r, Math.floor(at / DAY) + ri) });
+    }
+  });
+  return list;
+}
+let suppEd = null;      // напоминание, которое сейчас редактируется в шторке
+function suppSheetHtml() {
+  const r = suppEd, own = SUPP_JOKES[r.supp] || SUPP_JOKES_ANY, native = window.Android && Android.setReminders;
+  return `<h3>${r.isNew ? 'Новое напоминание' : 'Напоминание о приёме'}</h3>
+    <label class="field"><span>Что принимать</span><select data-in="suppF" data-k="supp">${[...SUPPS.map(s => [s.id, s.icon + ' ' + s.name]), ['other', '💊 Другое — своё название']]
+      .map(([v, l]) => `<option value="${v}" ${r.supp === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+    ${r.supp === 'other' ? `<label class="field"><span>Название</span><input type="text" data-in="suppF" data-k="name" value="${esc(r.name || '')}" placeholder="Например: цинк"></label>` : ''}
+    <div class="grid2"><label class="field"><span>Во сколько</span><input type="time" class="inp" data-in="suppF" data-k="time" value="${esc(r.time)}"></label>
+      <label class="field"><span>Сколько (необязательно)</span><input type="text" data-in="suppF" data-k="dose" value="${esc(r.dose || '')}" placeholder="5 г, 1 капсула…"></label></div>
+    <div class="muted small" style="margin:0 2px 6px">В какие дни</div>
+    <div class="week">${WD.map((n, i) => `<button class="${r.days.includes(i) ? 'on' : ''}" data-a="suppDay" data-v="${i}"><span>${n}</span><b>${r.days.includes(i) ? '✓' : '—'}</b></button>`).join('')}</div>
+    <div class="row" style="margin-top:8px"><button class="btn sm" data-a="suppDay" data-v="all">Каждый день</button><button class="btn sm" data-a="suppDay" data-v="work">По будням</button></div>
+    <div class="notif"><div class="muted small">Пример уведомления · вариантов: ${own.length}</div><b>${esc(suppTitle(r))}</b>
+      <div class="small">${esc(suppText(r, suppEd.demo || 0))}</div></div>
+    <div class="row" style="margin-top:10px"><button class="btn sm" data-a="suppDemo">Другой пример</button>
+      ${native ? `<button class="btn sm" data-a="suppTest">Прислать сейчас</button>` : ''}</div>
+    <div class="row end" style="margin-top:14px">${r.isNew ? '' : `<button class="btn danger" data-a="suppDel">Удалить</button>`}
+      <button class="btn ghost" data-a="sheetClose">Отмена</button><button class="btn primary" data-a="suppSave">Сохранить</button></div>`;
+}
+// Блок «Мои напоминания» — вверху справочника добавок; only — показать напоминания одной добавки (на её странице).
+function suppRemsHtml(only) {
+  const list = suppRems().filter(r => !only || r.supp === only), native = window.Android && Android.setReminders;
+  return `${list.map(r => `<div class="li rem"><button class="grow" data-a="suppEdit" data-id="${r.id}"><b>${esc(suppTitle(r))}</b>
+      <div class="muted small">${r.time} · ${daysLabel(r.days)}</div></button>
+      <input type="checkbox" data-in="suppOn" data-id="${r.id}" ${r.on ? 'checked' : ''} aria-label="Включено"></div>`).join('')}
+    <button class="btn block ${list.length ? '' : 'primary'}" style="margin:${list.length ? 10 : 0}px 0 0" data-a="suppAdd" data-v="${only || ''}">🔔 ${only ? 'Напоминать о приёме' : 'Добавить напоминание'}</button>
+    ${only ? '' : `<div class="muted small" style="margin-top:10px">${native ? `Уведомления ставятся на две недели вперёд и обновляются при каждом открытии приложения${remindLimit() < 20
+      ? '. В этой версии приложения помещается только 7 ближайших уведомлений — установите свежий APK, чтобы хватало на все' : ''}.`
+      : 'Уведомления приходят в приложении для Android. Здесь можно настроить расписание и посмотреть тексты.'}</div>`}`;
+}
+
 /* ---------- справочник: спортивные добавки ---------- */
 let supF = 0;
 const proofBadge = p => `<span class="proof ${PROOF[p][1]}">${PROOF[p][0]}</span>`;
@@ -1480,6 +1553,7 @@ function pgSupps(id) {
     const sec = (title, text) => `<h2>${title}</h2><section class="card">${text}</section>`;
     return `<header class="top"><a class="ic" href="#/supps">‹</a><h1>${s.name}</h1></header>
     <div class="sup-top"><span>${s.icon}</span>${proofBadge(s.proof)}</div>
+    <section class="card">${suppRemsHtml(s.id)}</section>
     ${sec('Что это', s.what)}${sec('Для чего', s.why)}${sec('Кому имеет смысл', s.who)}${sec('Как принимать', s.how)}
     ${s.id === 'protein' ? `<div class="hint" style="margin-bottom:10px">Ваша норма — около ${nutrition().protein} г белка в день.
       Как набрать её обычной едой — в разделе <a href="#/meals"><u>«Примеры рациона»</u></a>.</div>` : ''}
@@ -1490,6 +1564,8 @@ function pgSupps(id) {
   <section class="card"><b>С чего начать</b>
     <div class="small" style="margin-top:6px">Результат дают тренировки, еда и сон. Добавки помогают совсем немного и только когда основа уже налажена.
     Большинству достаточно обычной еды; из всего списка по-настоящему доказаны протеин (если не хватает белка), креатин и кофеин.</div></section>
+  <h2>Напоминания о приёме</h2><section class="card">${suppRemsHtml()}</section>
+  <h2>Справочник</h2>
   <div class="chips"><button class="chip ${supF ? '' : 'on'}" data-a="supF" data-v="0">Все</button>
     ${[3, 2, 1].map(p => `<button class="chip ${supF === p ? 'on' : ''}" data-a="supF" data-v="${p}">${PROOF[p][0]}</button>`).join('')}</div>
   ${list.map(x => `<a class="card link award" href="#/supps/${x.id}"><div class="aw-ic">${x.icon}</div><div class="grow"><div class="ex-head"><b>${x.name}</b>${proofBadge(x.proof)}</div>
@@ -2077,6 +2153,7 @@ const actions = {
     }
   },
   metric(d) { metric = d.v; render(); },
+  analogMore(d) { analogAll = d.id; render(); },
   demo(d) {
     sheet(`<h3>${esc(exById(d.id).name)}</h3>${demo(d.id)}${muscleMap(exById(d.id))}${techHtml(exById(d.id))}
       <div class="row end"><a class="btn ghost" href="#/exercise/${d.id}">Статистика</a><button class="btn" data-a="sheetClose">Закрыть</button></div>`);
@@ -2105,6 +2182,52 @@ const actions = {
     Android.setReminders(JSON.stringify([{ at: Date.now() + 10000, title: remindTitle(name), text: remindText(remDemo, name) }]), true);
     toast('Уведомление придёт примерно через 10 секунд — можно свернуть приложение');
     setTimeout(syncReminders, 20000);
+  },
+
+  /* напоминания о добавках */
+  suppAdd(d) {
+    const supp = d.v || 'creatine';
+    suppEd = { isNew: true, id: uid(), supp, name: '', dose: '', time: SUPP_TIMES[supp] || '09:00', days: [0, 1, 2, 3, 4, 5, 6], on: true, demo: 0 };
+    sheet(suppSheetHtml());
+  },
+  suppEdit(d) {
+    const r = suppRems().find(x => x.id === d.id);
+    if (!r) return;
+    suppEd = { ...r, days: [...r.days], demo: 0 };
+    sheet(suppSheetHtml());
+  },
+  suppDay(d) {
+    if (d.v === 'all') suppEd.days = [0, 1, 2, 3, 4, 5, 6];
+    else if (d.v === 'work') suppEd.days = [0, 1, 2, 3, 4];
+    else suppEd.days = suppEd.days.includes(+d.v) ? suppEd.days.filter(x => x !== +d.v) : [...suppEd.days, +d.v];
+    const el = $('.sheet'), top = el.scrollTop;
+    el.innerHTML = suppSheetHtml(); el.scrollTop = top;
+  },
+  suppDemo() { suppEd.demo = (suppEd.demo || 0) + 1; $('.sheet .notif .small:last-child').textContent = suppText(suppEd, suppEd.demo); },
+  suppTest() {
+    Android.setReminders(JSON.stringify([{ at: Date.now() + 10000, title: suppTitle(suppEd), text: suppText(suppEd, suppEd.demo || 0) }]), true);
+    toast('Уведомление придёт примерно через 10 секунд — можно свернуть приложение');
+    setTimeout(syncReminders, 20000);
+  },
+  suppSave() {
+    const r = suppEd;
+    if (r.supp === 'other' && !r.name.trim()) return toast('Введите название добавки');
+    if (!r.days.length) return toast('Выберите хотя бы один день недели');
+    if (!/^\d\d:\d\d$/.test(r.time)) return toast('Укажите время');
+    const rec = { id: r.id, supp: r.supp, name: r.name.trim(), dose: r.dose.trim(), time: r.time, days: [...r.days].sort(), on: r.on !== false };
+    const list = suppRems(), i = list.findIndex(x => x.id === r.id);
+    if (i >= 0) list[i] = rec; else list.push(rec);
+    list.sort((a, b) => a.time.localeCompare(b.time));
+    suppEd = null;
+    save(); syncReminders(); closeSheet(); render();
+    toast('Напоминание сохранено');
+  },
+  async suppDel() {
+    const id = suppEd.id;
+    if (!await confirmDlg('Удалить это напоминание?')) return;
+    db.suppRem = suppRems().filter(x => x.id !== id);
+    suppEd = null;
+    save(); syncReminders(); render();
   },
 
   /* справочник и дневник цикла */
@@ -2228,6 +2351,24 @@ const actions = {
 };
 
 const inputs = {
+  suppF(d, el) {
+    suppEd[d.k] = el.value;
+    if (d.k === 'supp') {
+      // для новой записи подставляем привычное время приёма этой добавки
+      if (suppEd.isNew && SUPP_TIMES[el.value]) suppEd.time = SUPP_TIMES[el.value];
+      suppEd.demo = 0;
+      $('.sheet').innerHTML = suppSheetHtml();
+    } else if (d.k === 'name' || d.k === 'dose') {
+      $('.sheet .notif b').textContent = suppTitle(suppEd);
+      $('.sheet .notif .small:last-child').textContent = suppText(suppEd, suppEd.demo || 0);
+    }
+  },
+  suppOn(d, el) {
+    const r = suppRems().find(x => x.id === d.id);
+    if (!r) return;
+    r.on = el.checked;
+    save(); syncReminders();
+  },
   glosQ(d, el) { glosQ = el.value; $('#glosbox').innerHTML = glosHtml(); },
   catF(d, el) { cf[d.k] = el.value; $('#catbox').innerHTML = catListHtml(); },
   obNum(d, el) { const v = num(el.value); if (v != null) ob[d.k] = v; },
