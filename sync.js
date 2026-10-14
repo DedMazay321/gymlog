@@ -40,17 +40,31 @@ function mergeIncoming(d) {
   ['profile', 'cycle', 'activeProgram'].forEach(k => { if (d[k] != null) db[k] = d[k]; });
   db.stretchDone = Math.max(db.stretchDone || 0, d.stretchDone || 0);
   db.gone = gone;
+  st.photos = (d.photos || []).length;
+  syncPhotosIn(d.photos || [], gone);
   if (!db.settings.onboarded && d.settings && d.settings.onboarded) db.settings.onboarded = true;
   save();
   checkAwards(true);
   const c = syncCfg(); c.lastIn = Date.now(); c.lastStat = st; syncSave(c);
   return st;
 }
+async function syncPhotosIn(list, gone) {
+  try {
+    for (const p of list) {
+      if (!p || !p.id || gone[p.id] || !/^data:image\//.test(p.data || '')) continue;
+      const blob = await (await fetch(p.data)).blob();
+      await photoStore('readwrite', st => st.put({ id: p.id, date: +p.date || Date.now(), blob, ...(p.pose ? { pose: p.pose } : {}) }));
+    }
+    const have = await photoStore('readonly', st => st.getAllKeys());
+    for (const id of have) if (gone[id]) await photoStore('readwrite', st => st.delete(id));
+    if (list.length || have.some(id => gone[id])) { await loadPhotos(); render(); }
+  } catch (e) { toast('Не удалось сохранить фото с телефона: ' + e.message); }
+}
 // ПК вызывает эту функцию, когда телефон прислал данные; ответ уходит обратно телефону.
 window.syncIncoming = text => {
   try {
     const st = mergeIncoming(JSON.parse(text));
-    setTimeout(() => { render(); toast(`Данные с телефона получены: новых ${st.added}, изменено ${st.updated}`); }, 0);
+    setTimeout(() => { render(); toast(`Данные с телефона получены: новых ${st.added}, изменено ${st.updated}${st.photos ? `, фото ${st.photos}` : ''}`); }, 0);
     return JSON.stringify({ ok: true, ...st, total: db.workouts.length });
   } catch (e) { return JSON.stringify({ ok: false, error: e.message }); }
 };
@@ -72,9 +86,13 @@ window.onNativeSync = r => {
     let res = {};
     try { res = JSON.parse(r.body || '{}'); } catch (e) { /* пустой ответ */ }
     if (r.code === 200 && res.ok) {
-      c.lastOut = Date.now(); c.lastErr = ''; if (c.pending) { c.host = c.pending.host; c.port = c.pending.port; c.name = c.pending.name; c.code = c.pending.code; delete c.pending; }
+      if (c.pending) { c.host = c.pending.host; c.port = c.pending.port; c.name = c.pending.name; c.code = c.pending.code; c.sent = {}; delete c.pending; }
+      c.lastOut = Date.now(); c.lastErr = ''; c.sent = { ...(c.sent || {}), ...(c.sending || {}) }; delete c.sending;
+      // не все фото поместились — отправляем следующую порцию
+      if (c.more) setTimeout(() => syncPush(false), 500);
+      delete c.more;
       syncSave(c);
-      if (r.manual) toast(`Отправлено на ПК: новых ${res.added}, изменено ${res.updated}`);
+      if (r.manual) toast(`Отправлено на ПК: новых ${res.added}, изменено ${res.updated}${res.photos ? `, фото ${res.photos}` : ''}`);
     } else {
       const msg = r.code === 403 ? 'неверный код' : r.code === 429 ? 'слишком много попыток, подождите 10 минут' : r.code ? 'ПК ответил ' + r.code + (res.error ? ': ' + res.error : '') : r.message || 'нет связи';
       if (c.pending) delete c.pending;
@@ -90,11 +108,32 @@ if (IS_PC) {
 }
 
 // Отправка всех данных на привязанный ПК. manual — показать результат; без него — тихо, в фоне.
-function syncPush(manual, target) {
+// Фото прогресса уходят вместе с данными: только новые или с изменённым ракурсом (c.sent: id → ракурс),
+// и не больше ~8 МБ за раз — остальные догрузятся следующей отправкой.
+const blobData = b => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(b); });
+async function photosToSend(sent) {
+  let list = [];
+  try { list = await photoStore('readonly', st => st.getAll()); } catch (e) { return []; }
+  const out = [];
+  let size = 0;
+  for (const p of list.sort((a, b) => a.date - b.date)) {
+    if (sent[p.id] === (p.pose || '')) continue;
+    if (size + p.blob.size > 8e6 && out.length) { out.more = true; break; }
+    size += p.blob.size;
+    out.push({ id: p.id, date: p.date, pose: p.pose || '', data: await blobData(p.blob) });
+  }
+  return out;
+}
+async function syncPush(manual, target) {
   const c = syncCfg(), t = target || c;
   if (!syncNative() || !t.host) return false;
   syncBusy = !!manual;
-  Android.syncPush(t.host, +t.port || SYNC_PORT, String(t.code), JSON.stringify(db), !!manual);
+  const ph = await photosToSend(target ? {} : c.sent || {});
+  const c2 = syncCfg();
+  c2.sending = Object.fromEntries(ph.map(p => [p.id, p.pose]));
+  c2.more = !!ph.more;
+  syncSave(c2);
+  Android.syncPush(t.host, +t.port || SYNC_PORT, String(t.code), JSON.stringify({ ...db, photos: ph }), !!manual);
   return true;
 }
 // автоматически — после завершения тренировки и при запуске, если с прошлой отправки прошло больше 6 часов
@@ -124,7 +163,7 @@ function pgSync() {
       <button class="btn block" data-a="syncNewCode" style="margin-top:10px">Сменить код</button>
       <div class="muted small" style="margin-top:8px">После смены кода телефон нужно привязать заново.</div></section>
     <p class="muted small">При первом запуске Windows может спросить разрешение для GymLog в брандмауэре — разрешите доступ в частных сетях.
-    Данные идут напрямую с телефона на компьютер и никуда больше не отправляются. Фото прогресса пока не передаются.</p>`;
+    Данные и фото прогресса идут напрямую с телефона на компьютер и никуда больше не отправляются.</p>`;
   }
   if (!syncNative()) return head + `<section class="card"><div class="small">${window.Android
     ? 'Синхронизация появилась в приложении для Android версии 1.24. Установите новый GymLog.apk поверх старого — данные сохранятся.'
@@ -159,7 +198,7 @@ Object.assign(actions, {
     const r = await form('Адрес компьютера', [{ name: 'host', label: 'IP-адрес (показан на ПК в разделе синхронизации)', type: 'text', placeholder: '192.168.1.10' }]);
     if (r && r.host) syncPairAsk(r.host.trim(), SYNC_PORT, 'Компьютер');
   },
-  syncNow() { if (syncPush(true)) render(); },
+  syncNow() { syncPush(true); render(); },
   async syncForget() { if (await confirmDlg('Отвязать компьютер? Данные на нём останутся.', 'Отвязать')) { localStorage.removeItem(SYNC_KEY); render(); } },
   syncNewCode() { syncInfo = null; Android.syncNewCode(); render(); },
 });

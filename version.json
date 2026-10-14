@@ -1,10 +1,10 @@
 {
- "version": 25,
- "name": "1.24",
- "notes": "Синхронизация телефон → ПК по Wi-Fi (нужен новый APK); время подходов для разбора отдыха",
+ "version": 26,
+ "name": "1.25",
+ "notes": "Анализ фото: ракурсы, шторка и наложение, изменения замеров и силы между снимками, коллаж для ИИ; фото передаются на ПК при синхронизации",
  "files": {
   "analysis.js": "2ec5042c879fd581bf95bec6ba17fb00e25a9c2a839024ead3703b8e23c6d92d",
-  "app.js": "df2860a1a5191515117f99ba564e3f22a632c350d65eb0d6ab02ccce0fa8b139",
+  "app.js": "7719c87ffbfdaf479abd79f60a799a0fd1261a77e367b5067ef39eb1f0fb7369",
   "body.js": "f36e17c0e3042e0d83ed19f3af9db9c38b938948168864ae30cd29f0e849ee91",
   "exercises.js": "5378eb5d0e6a0e11f7a6dd9d5d1bab2383d647205e2b12c393fffb58f92068bb",
   "guide.js": "aa96bfa9227f102dd5e90d81bedbfc6aa87291fdf680f17eb25731fe80d20058",
@@ -667,13 +667,14 @@
   "img/s8_1.jpg": "bebe29fab84e28573cbc3bc47af34c6d0f6cdce8f26e942c87bde08352e05f71",
   "img/s9_0.jpg": "29ae8af3f71c422b5bf0491404bd80c33fd57aa0efe6f559e7ff3f51f6f5038b",
   "img/s9_1.jpg": "d54074a718c16ef774b8725877d3a0b09f92a16a573a2a3eac5490f9ef14a946",
-  "index.html": "e4247f333e004c1b2a1351b0f92e58e979a64faa805de705b4530aa019f2dac2",
+  "index.html": "2e40c85ee085ab8a2f8d76acf828e6edd147bdd92013a93820e378a0c948d40d",
   "manifest.json": "94842a0eaf89b834d9943206744fba3df196f42d84693cd9b17c2d14095c52e0",
+  "photoan.js": "e0ca4fd805b66d58bbd929f6abd9e0c1bd6fd5d961856ca9343660e358d96eb2",
   "programs.js": "5612639d216114f5957b9aadc8b0cc6394bbb64aabe097eb22ed3119fc4ead2e",
   "stretch.js": "ef1fa9057c00f5dcc3c0dcd116e20c0435c796ce7357a5bf5b84450a03169e36",
-  "styles.css": "72a85c964c442e5bc840c71454b15a5fd1e4228a32088f2fc8423a6200c9da7d",
+  "styles.css": "58969d68d005ef9704f392e0c71ec6c770c47a2bebce0f45987c46f67b2a0a61",
   "sw.js": "55ea225a9c6f5a5541c222872bda93f70fd72886921db6b0d6cb01a12919a8a8",
-  "sync.js": "18009caa03c06ddb52bbeca554c35997005c1d9350785fdf0e340c627a6ccd3b",
+  "sync.js": "8b747b08a4110f257a362e6a5ca5d2b9b3f7af078d98e092abbeeaa60e42c610",
   "tech.js": "04f0a36a7e1193fe6b9c56cbeae4e104619d2c667c0d153530240876a60d75de"
  }
 }

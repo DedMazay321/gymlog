@@ -489,7 +489,7 @@ function pgProgress() {
   ${hub('#/awards', '🏆', 'Достижения', `Получено уровней: ${got} из ${all}`)}
   ${hub('#/history', '🗓️', 'История тренировок', total ? `Всего тренировок: ${total} · календарь и список` : 'Здесь появятся ваши тренировки')}
   ${hub('#/measures', '📏', 'Замеры тела', weight ? `Вес: ${n(weight.value)} кг · обхваты и графики` : 'Вес, обхваты и графики изменений')}
-  ${hub('#/measures/photo', '📷', 'Фото прогресса', db.photoCount ? `Снимков: ${db.photoCount} · сравнение «было и стало»` : 'Сравнение «было и стало»')}`;
+  ${hub('#/measures/photo', '📷', 'Фото прогресса', db.photoCount ? `Снимков: ${db.photoCount} · сравнение и анализ изменений` : 'Сравнение «было и стало» и анализ изменений')}`;
 }
 
 /* ---------- экран: тренировка ---------- */
@@ -1011,15 +1011,19 @@ function shrink(file) {
 }
 function photosHtml() {
   if (!photos) { loadPhotos(); return `<div class="empty">Загрузка…</div>`; }
-  const first = photos[0], last = photos[photos.length - 1];
+  // сравниваем снимки одного ракурса: последний и самый ранний из того же ракурса
+  const last = photos[photos.length - 1], same = last && photos.find(p => (p.pose || '') === (last.pose || ''));
+  const first = same && same !== last ? same : photos[0];
   return `${photos.length > 1 ? `<h2>Было и стало</h2><div class="cmp">
       <figure><img src="${photoUrls[first.id]}" alt=""><figcaption>${fmtDate(first.date)}</figcaption></figure>
       <figure><img src="${photoUrls[last.id]}" alt=""><figcaption>${fmtDate(last.date)}</figcaption></figure></div>` : ''}
+    ${photos.length > 1 ? `<a class="card link award" href="#/photoan"><div class="aw-ic">🔍</div><div class="grow"><b>Анализ фото</b>
+      <div class="muted small">Шторка и наложение, изменения замеров и силы между снимками, разбор с ИИ</div></div><span class="muted">›</span></a>` : ''}
     <button class="btn block primary" data-a="photoAdd">+ Добавить фото</button>
     ${photos.length ? `<h2>Все фото</h2><div class="pgrid">${[...photos].reverse().map(p => `<button data-a="photoView" data-id="${p.id}">
-      <img src="${photoUrls[p.id]}" alt="" loading="lazy"><span>${fmtDate(p.date)}</span></button>`).join('')}</div>`
+      <img src="${photoUrls[p.id]}" alt="" loading="lazy"><span>${fmtDate(p.date)}${p.pose ? ' · ' + poseName(p.pose).toLowerCase() : ''}</span></button>`).join('')}</div>`
       : `<div class="empty">Снимайте себя раз в 2–4 недели в одной позе и при одном освещении — изменения, незаметные в зеркале, будут видны на фото.</div>`}
-    <p class="muted small">Фото хранятся только на этом устройстве и в резервную копию не входят.</p>`;
+    <p class="muted small">Фото хранятся на этом устройстве (и на ПК, если включена синхронизация) и в резервную копию не входят.</p>`;
 }
 function pgMeasures(sub) {
   if (sub === 'photo') { mType = 'photo'; history.replaceState(null, '', '#/measures'); }
@@ -1747,7 +1751,7 @@ function render() {
   const [page, id, sub] = (location.hash.slice(2) || 'workouts').split('/');
   const fn = pages[page] || pgWorkouts;
   $('#app').innerHTML = fn(id, sub);
-  $('#app').classList.toggle('wide', page === 'analysis');   // на широком экране (ПК) анализ раскладывается в две колонки
+  $('#app').classList.toggle('wide', page === 'analysis' || page === 'photoan');   // на широком экране (ПК) анализ раскладывается в две колонки
   const tab = tabOf[page] || (pages[page] ? page : 'workouts');
   document.querySelectorAll('#tabs a').forEach(a => a.classList.toggle('on', a.dataset.tab === tab));
   document.documentElement.dataset.theme = db.settings.theme;
@@ -2287,10 +2291,14 @@ const actions = {
   photoAdd() { $('#photoInp').click(); },
   async photoView(d) {
     const p = photos.find(x => x.id === d.id);
-    const v = await sheet(`<h3>${fmtDate(p.date)}</h3><img class="pfull" src="${photoUrls[p.id]}" alt="">
+    const v = await sheet(`<h3>${fmtDate(p.date)} · ${poseName(p.pose).toLowerCase()}</h3><img class="pfull" src="${photoUrls[p.id]}" alt="">
       <div class="row end" style="margin-top:12px"><button class="btn danger" data-a="sheetRes" data-v="del">Удалить</button>
+      <button class="btn" data-a="sheetRes" data-v="pose">Ракурс</button>
       <button class="btn" data-a="sheetClose">Закрыть</button></div>`);
+    if (v === 'pose') return actions.photoPose({ id: p.id });
     if (v === 'del' && await confirmDlg('Удалить это фото?')) {
+      forget(p.id);
+      save();
       await photoStore('readwrite', st => st.delete(p.id));
       URL.revokeObjectURL(photoUrls[p.id]); delete photoUrls[p.id];
       await loadPhotos(); render();
@@ -2428,7 +2436,8 @@ $('#photoInp').addEventListener('change', async e => {
   if (!file) return;
   try {
     const blob = await shrink(file);
-    await photoStore('readwrite', st => st.put({ id: uid(), date: Date.now(), blob }));
+    const pose = await menu('Ракурс снимка — по нему фото сравниваются между собой', [['front', 'Спереди'], ['side', 'Сбоку'], ['back', 'Сзади'], ['', 'Не указывать']]);
+    await photoStore('readwrite', st => st.put({ id: uid(), date: Date.now(), blob, ...(pose ? { pose } : {}) }));
     await loadPhotos(); render(); toast('Фото добавлено');
   } catch (err) { toast('Не удалось добавить фото: ' + err.message); }
 });
