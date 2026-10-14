@@ -1087,12 +1087,13 @@ function pgMore() {
   </section>
   <h2>Данные</h2>
   <section class="card">
+    <a class="li" href="#/sync"><span>${IS_PC ? '📲 Синхронизация с телефоном' : '💻 Синхронизация с ПК'}</span><span class="muted">›</span></a>
     <button class="li" data-a="exportJson"><span>Сохранить резервную копию</span><span class="muted small">.json</span></button>
     <button class="li" data-a="importJson"><span>Восстановить из копии</span><span class="muted small">.json</span></button>
     <button class="li" data-a="exportCsv"><span>Выгрузить тренировки в таблицу</span><span class="muted small">.csv</span></button>
     <button class="li" data-a="wipe" style="color:var(--danger)"><span>Удалить все данные</span></button>
   </section>
-  <p class="muted small">Все данные хранятся только на этом устройстве. Делайте резервную копию, чтобы не потерять их при очистке браузера или смене телефона.</p>
+  <p class="muted small">Все данные хранятся только на этом устройстве (и на вашем ПК, если включена синхронизация). Делайте резервную копию, чтобы не потерять их при очистке браузера или смене телефона.</p>
   <p class="muted small">Фотографии и данные о мышцах — открытая база free-exercise-db (общественное достояние); схема тела — react-native-body-highlighter (MIT).</p>
   <p class="muted small">GymLog · ${db.workouts.length} тренировок · ${db.exercises.filter(e => !e.archived).length} упражнений</p>`;
 }
@@ -1866,7 +1867,7 @@ const actions = {
     if (v === 'resume') { w.end = null; save(); render(); }
     if (v === 'del' && await confirmDlg('Удалить тренировку?')) {
       if (!w.end) stopRest();
-      db.workouts = db.workouts.filter(x => x !== w); save(); go('#/workouts');
+      forget(w.id); db.workouts = db.workouts.filter(x => x !== w); save(); go('#/workouts');
     }
   },
   async wAddEx(d) {
@@ -1880,7 +1881,7 @@ const actions = {
     const w = W(d.w);
     if (!wStats(w).sets) {
       if (await confirmDlg('Нет выполненных подходов. Удалить тренировку?')) {
-        db.workouts = db.workouts.filter(x => x !== w); stopRest(); save(); go('#/workouts');
+        forget(w.id); db.workouts = db.workouts.filter(x => x !== w); stopRest(); save(); go('#/workouts');
       }
       return;
     }
@@ -1890,7 +1891,7 @@ const actions = {
     render();
     const feel = await menu('Как прошла тренировка?', [[1, '😌 Легко — остался запас сил'], [2, '🙂 Нормально — в самый раз'], [3, '😤 Тяжело — на пределе']]);
     if (feel) w.feel = +feel;
-    save(); syncReminders();
+    save(); syncReminders(); syncAuto(true);
     const news = checkAwards();
     render();
     if (news.length) {
@@ -2066,7 +2067,7 @@ const actions = {
     if (v === 'rename') return actions.pRename(d);
     if (v === 'active') return actions.pActive(d);
     if (v === 'del' && await confirmDlg('Удалить программу? История тренировок сохранится.')) {
-      db.programs = db.programs.filter(p => p.id !== d.p); save(); go('#/programs');
+      forget(d.p); db.programs = db.programs.filter(p => p.id !== d.p); save(); go('#/programs');
     }
   },
   async dAdd(d) {
@@ -2313,7 +2314,7 @@ const actions = {
     save(); render();
   },
   async mDel(d) {
-    if (await confirmDlg('Удалить эту запись?')) { db.measures = db.measures.filter(m => m.id !== d.id); save(); render(); }
+    if (await confirmDlg('Удалить эту запись?')) { forget(d.id); db.measures = db.measures.filter(m => m.id !== d.id); save(); render(); }
   },
 
   /* обновление */
