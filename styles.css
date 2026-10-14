@@ -492,3 +492,9 @@ div.li { cursor: default; }
 .pa-l { left: 8px; } .pa-r { right: 8px; }
 .pa-range { width: 100%; margin: 10px 0 0; accent-color: var(--accent); }
 @media (min-width: 900px) { #app.wide .pa-stack, #app.wide .cmp { max-width: 520px; } }
+
+/* подсказка разминки */
+.hint.wu { display: block; width: 100%; text-align: left; color: var(--text); border: 1px dashed var(--line); }
+.hint.wu b { color: var(--accent); font-weight: 600; }
+.an-acts { margin-top: 10px; flex-wrap: wrap; gap: 6px; }
+.an-lift .ex-head a { color: inherit; }

@@ -165,16 +165,16 @@ function adviceList() {
   const ap = activeProgram(), planned = ap ? ap.days.length : 0;
   // регулярность
   if (gap >= 8) out.push(['warn', 'Перерыв', `Последняя тренировка была ${agoTxt(gap)}. После перерыва больше недели начните с весов на 10–20% ниже прежних.`]);
-  if (planned && recent.length >= 2 && perWeek < planned - 0.8) out.push(['warn', 'Регулярность', `В среднем ${n(+perWeek.toFixed(1))} трен./нед. при ${planned} в программе. Если не успеваете — возьмите программу на меньшее число дней: регулярность важнее объёма.`]);
+  if (planned && recent.length >= 2 && perWeek < planned - 0.8) out.push(['warn', 'Регулярность', `В среднем ${n(+perWeek.toFixed(1))} трен./нед. при ${planned} в программе. Если не успеваете — возьмите программу на меньшее число дней: регулярность важнее объёма.`, { warn: true }]);
   else if (recent.length >= 3 && perWeek >= 2) out.push(['ok', 'Регулярность', `${n(+perWeek.toFixed(1))} трен./нед. за последний месяц — хороший ритм.`]);
   // объём на мышцы
   if (recent.length >= 3) {
     const v = groupSets(now - weeks * 7 * DAY, now), per = k => v[k] / weeks;
     const low = AN_GROUPS.filter(([k, , lo]) => per(k) > 0 && per(k) < lo * 0.6), none = AN_GROUPS.filter(([k]) => ['Грудь', 'Спина', 'Квадрицепс'].includes(k) && !per(k));
     const high = AN_GROUPS.filter(([k, , , hi]) => per(k) > hi + 5);
-    if (none.length) out.push(['warn', 'Пропущенные мышцы', `За последние недели нет нагрузки на: ${none.map(g => g[0].toLowerCase()).join(', ')}. Добавьте хотя бы одно упражнение на них.`]);
-    if (low.length) out.push(['info', 'Мало подходов', low.map(([k, , lo, hi]) => `${k} — ${n(+per(k).toFixed(1))} в нед. (для роста обычно ${lo}–${hi})`).join('; ') + '.']);
-    if (high.length) out.push(['info', 'Много подходов', high.map(([k, , , hi]) => `${k} — ${n(+per(k).toFixed(1))} в нед. (больше ${hi} редко даёт прибавку и мешает восстановлению)`).join('; ') + '.']);
+    if (none.length) out.push(['warn', 'Пропущенные мышцы', `За последние недели нет нагрузки на: ${none.map(g => g[0].toLowerCase()).join(', ')}. Добавьте хотя бы одно упражнение на них.`, { groups: none.map(g => g[0]) }]);
+    if (low.length) out.push(['info', 'Мало подходов', low.map(([k, , lo, hi]) => `${k} — ${n(+per(k).toFixed(1))} в нед. (для роста обычно ${lo}–${hi})`).join('; ') + '.', { groups: low.map(g => g[0]) }]);
+    if (high.length) out.push(['info', 'Много подходов', high.map(([k, , , hi]) => `${k} — ${n(+per(k).toFixed(1))} в нед. (больше ${hi} редко даёт прибавку и мешает восстановлению)`).join('; ') + '.', { groups: high.map(g => g[0]) }]);
     const push = per('Грудь') + per('Плечи') * 0.5, pull = per('Спина');
     if (push >= 6 && pull < push / 1.5) out.push(['warn', 'Баланс жим / тяга', `Жимов примерно в ${n(+(push / Math.max(pull, 1)).toFixed(1))} раза больше, чем тяг. Добавьте тяги — это бережёт плечи и осанку.`]);
     const legs = per('Квадрицепс') + per('Бицепс бедра') + per('Ягодицы'), all = AN_GROUPS.reduce((a, [k]) => a + per(k), 0);
@@ -204,7 +204,7 @@ function adviceList() {
     else if (goal === 'gain' && rate > 0.5) out.push(['info', 'Вес тела', `Вес растёт быстро (${r}) — вероятно, в основном за счёт жира. Уберите 150–200 ккал.`]);
     else if (goal === 'loss' && rate > -0.2) out.push(['info', 'Вес тела', `Вес почти не снижается (${r}). Проверьте калории — нужен дефицит 300–500 ккал.`]);
     else if (goal === 'loss' && rate < -b.value * 0.01) out.push(['warn', 'Вес тела', `Вес уходит слишком быстро (${r}) — так теряются и мышцы. Оптимально 0,5–1% веса в неделю.`]);
-    else out.push(['ok', 'Вес тела', `Изменение веса — ${r}, это соответствует вашей цели.`]);
+    else out.push(['ok', 'Вес тела', `Изменение веса — ${r}, это соответствует вашей цели.`, { warn: false }]);
   }
   return out;
 }
@@ -215,12 +215,14 @@ function pgAnalysis() {
   const fin = finished();
   const head = `<header class="top"><a class="ic" href="#/progress">‹</a><h1>Анализ и советы</h1></header>`;
   if (fin.length < 2) return head + `<div class="empty">Нужно хотя бы 2 завершённые тренировки — после них здесь появится разбор прогресса и советы.</div>`;
+  anActs = [];
   const adv = adviceList(), tr = liftTrends(), now = Date.now();
   const weeks = Math.max(1, Math.min(4, (now - Math.min(...fin.map(w => w.start))) / (7 * DAY))), v = groupSets(now - weeks * 7 * DAY, now);
   const lastW = sortedW().find(w => w.end);
   return head + `<div class="an-grid"><div>
   <h2>Советы</h2>
-  ${adv.map(([k, t, x]) => `<section class="card an-adv ${k}"><b>${AN_IC[k]} ${t}</b><div class="small">${esc(x)}</div></section>`).join('')
+  ${undoCard()}${deloadCard()}
+  ${adv.map(([k, t, x, ctx]) => `<section class="card an-adv ${k}"><b>${AN_IC[k]} ${t}</b><div class="small">${esc(x)}</div>${actBtns(adviceActions(t, ctx || {}))}</section>`).join('')
     || `<section class="card"><div class="small">Явных проблем не видно — продолжайте в том же духе.</div></section>`}
   <h2>Подходов в неделю на мышцы</h2>
   <section class="card">${AN_GROUPS.map(([k, , lo, hi]) => {
@@ -230,11 +232,11 @@ function pgAnalysis() {
     <div class="muted small" style="margin-top:6px">Среднее за ${weeks >= 4 ? '4 недели' : 'период с первой тренировки'}. Светлая полоса — обычный диапазон для роста. Вспомогательные мышцы считаются за полподхода.</div></section>
   </div><div>
   <h2>Основные упражнения</h2>
-  ${tr.length ? tr.map(t => `<a class="card link an-lift" href="#/exercise/${t.ex.id}">
-    <div class="ex-head"><b class="grow">${esc(t.ex.name)}</b><span class="${AN_ST[t.status][1]} small">${AN_ST[t.status][0]}</span></div>
+  ${tr.length ? tr.map(t => `<section class="card an-lift">
+    <div class="ex-head"><a class="grow" href="#/exercise/${t.ex.id}"><b>${esc(t.ex.name)}</b></a><span class="${AN_ST[t.status][1]} small">${AN_ST[t.status][0]}</span></div>
     <div class="muted small">Последний раз ${agoTxt(daysAgo(t.last.t))}: ${t.lastSets.map(s => setTxt(s, 'wr')).join(' · ')}</div>
     <div class="small" style="margin-top:4px">${t.weighted ? `1ПМ ≈ ${n(+t.last.rm.toFixed(1))} кг · рекорд ${n(+t.best.toFixed(1))} кг` : `лучший подход ${t.last.b} повт. · рекорд ${t.best}`} · за 4 нед. ${fmtPct(t.change)}</div>
-    ${t.tip ? `<div class="hint">${esc(t.tip)}</div>` : ''}</a>`).join('')
+    ${t.tip ? `<div class="hint">${esc(t.tip)}</div>` : ''}${actBtns(liftActions(t))}</section>`).join('')
     : `<section class="card"><div class="small muted">Упражнение попадёт сюда, когда будет выполнено хотя бы 3 раза за последние 3 месяца.</div></section>`}
   ${lastW ? `<a class="card link award" href="#/workout/${lastW.id}"><div class="aw-ic">🔍</div><div class="grow"><b>Разбор последней тренировки</b>
     <div class="muted small">${esc(lastW.name)} · ${fmtDate(lastW.start)}</div></div><span class="muted">›</span></a>` : ''}

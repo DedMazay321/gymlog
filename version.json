@@ -1,10 +1,11 @@
 {
- "version": 26,
- "name": "1.25",
- "notes": "Анализ фото: ракурсы, шторка и наложение, изменения замеров и силы между снимками, коллаж для ИИ; фото передаются на ПК при синхронизации",
+ "version": 27,
+ "name": "1.26",
+ "notes": "Синхронизация в обе стороны (ПК -> телефон), советы применяются кнопкой и лёгкая неделя, 9 новых программ с новыми упражнениями, разминочные подходы",
  "files": {
-  "analysis.js": "2ec5042c879fd581bf95bec6ba17fb00e25a9c2a839024ead3703b8e23c6d92d",
-  "app.js": "7719c87ffbfdaf479abd79f60a799a0fd1261a77e367b5067ef39eb1f0fb7369",
+  "advice.js": "4b9a3e53da55c75bc98db96066a0ce24ae33c32fbd11685e54fbd09d9887f397",
+  "analysis.js": "ed842de168ce88ca95a6407698c1d04b09b740e312b67236cfc3d68bb61e8628",
+  "app.js": "a97c646dafeaee34c08781c07f854ee23ba38efdbd8ea4fd2756aa5a5141481e",
   "body.js": "f36e17c0e3042e0d83ed19f3af9db9c38b938948168864ae30cd29f0e849ee91",
   "exercises.js": "5378eb5d0e6a0e11f7a6dd9d5d1bab2383d647205e2b12c393fffb58f92068bb",
   "guide.js": "aa96bfa9227f102dd5e90d81bedbfc6aa87291fdf680f17eb25731fe80d20058",
@@ -667,14 +668,14 @@
   "img/s8_1.jpg": "bebe29fab84e28573cbc3bc47af34c6d0f6cdce8f26e942c87bde08352e05f71",
   "img/s9_0.jpg": "29ae8af3f71c422b5bf0491404bd80c33fd57aa0efe6f559e7ff3f51f6f5038b",
   "img/s9_1.jpg": "d54074a718c16ef774b8725877d3a0b09f92a16a573a2a3eac5490f9ef14a946",
-  "index.html": "2e40c85ee085ab8a2f8d76acf828e6edd147bdd92013a93820e378a0c948d40d",
+  "index.html": "52635746514ccb4ce62e8a851d78e501e28426e5a180c1b3d15619d115f797b1",
   "manifest.json": "94842a0eaf89b834d9943206744fba3df196f42d84693cd9b17c2d14095c52e0",
   "photoan.js": "e0ca4fd805b66d58bbd929f6abd9e0c1bd6fd5d961856ca9343660e358d96eb2",
-  "programs.js": "5612639d216114f5957b9aadc8b0cc6394bbb64aabe097eb22ed3119fc4ead2e",
+  "programs.js": "610426d324c03b9769156fa3e36c59c3bc741ae5cc61e2058f2196a8877aeefd",
   "stretch.js": "ef1fa9057c00f5dcc3c0dcd116e20c0435c796ce7357a5bf5b84450a03169e36",
-  "styles.css": "58969d68d005ef9704f392e0c71ec6c770c47a2bebce0f45987c46f67b2a0a61",
+  "styles.css": "927bf08f1d6c22b9bc388dd3d14850210f3f08eb8696ec58693dd2359918face",
   "sw.js": "55ea225a9c6f5a5541c222872bda93f70fd72886921db6b0d6cb01a12919a8a8",
-  "sync.js": "8b747b08a4110f257a362e6a5ca5d2b9b3f7af078d98e092abbeeaa60e42c610",
+  "sync.js": "65c2b765059eed0bae9dbdc0bb1703d10a3a23e7a1e32195ac36cdb3a21ca296",
   "tech.js": "04f0a36a7e1193fe6b9c56cbeae4e104619d2c667c0d153530240876a60d75de"
  }
 }

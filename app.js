@@ -119,6 +119,21 @@ function suggest(it, prev) {
   return { dw: step, text: `Сегодня: ${n(top + step)} кг — в прошлый раз план выполнен${easy ? ' легко' : ''}, прибавьте ${n(step)} кг` };
 }
 const FEEL = { 1: ['легко', '😌'], 2: ['нормально', '🙂'], 3: ['тяжело', '😤'] };
+// Разминочные подходы перед рабочим весом: со штангой — от пустого грифа, с гантелями и в тренажёрах — 50% и 75%.
+// Веса округляются до доступного шага; подходы легче грифа, слишком близкие к рабочему и повторы весов отбрасываются.
+function warmupPlan(ex, work) {
+  if (ex.kind !== 'wr' || !work) return [];
+  const bar = ex.equip === 'Штанга', step = bar ? 2.5 : ex.equip === 'Гантели' ? 1 : ex.equip === 'Гиря' ? 4 : 2.5;
+  if (bar ? work < 30 : work < 10 || ex.equip === 'Своё тело' || ex.equip === 'Другое') return [];
+  const plan = bar ? [[0, 10], [.5, 6], [.7, 3], ...(work >= 100 ? [[.85, 1]] : [])] : [[.5, 10], [.75, 5]];
+  const out = [];
+  plan.forEach(([k, r]) => {
+    const wt = k ? Math.round(work * k / step) * step : 20;
+    if ((bar && wt < 20) || wt <= 0 || wt > work * .9 || out.some(x => x.w >= wt)) return;
+    out.push({ w: wt, r });
+  });
+  return out;
+}
 
 // Изменение показателя относительно прошлого результата: ▲ рост, ▼ падение, = без изменений.
 function dl(d, unit = '') {
@@ -496,8 +511,14 @@ function pgProgress() {
 function itemCard(w, it, i) {
   const ex = exById(it.exId), k = KINDS[ex.kind] || KINDS.wr, prev = prevSets(it.exId, w.id, w.start);
   const d = `data-w="${w.id}" data-x="${i}"`;
-  const sg = w.end ? null : suggest(it, prev), best = ex.kind === 'wr' ? bestBefore(ex.id, w.start) : 0;
+  const sg = w.end ? null : w.deload ? deloadHint(it, prev) : suggest(it, prev), best = ex.kind === 'wr' ? bestBefore(ex.id, w.start) : 0;
   const linked = i > 0 && w.items[i - 1].ss;   // продолжение суперсета
+  // прошлые подходы сопоставляем по типу: разминочные — с разминочными, рабочие — с рабочими
+  const prevWork = prev.filter(x => x.t !== 'w'), prevWarm = prev.filter(x => x.t === 'w');
+  const match = j => { const warm = it.sets[j].t === 'w'; return (warm ? prevWarm : prevWork)[it.sets.slice(0, j).filter(x => (x.t === 'w') === warm).length]; };
+  // разминку предлагаем перед первым упражнением на группу мышц, пока не начаты подходы
+  const workW = (it.sets.find(x => x.t !== 'w' && x.w) || {}).w || (prevWork.length ? Math.max(...prevWork.map(x => x.w || 0)) + (sg && sg.dw || 0) : 0);
+  const wu = !w.end && db.settings.warmup !== false && !it.sets.some(x => x.t === 'w' || x.done) && !w.items.slice(0, i).some(x => exById(x.exId).muscle === ex.muscle) ? warmupPlan(ex, workW) : [];
   // оценку «как дался подход» спрашиваем только у последнего выполненного, чтобы карточка не разрасталась
   const lastDone = it.sets.reduce((a, s, j) => s.done ? j : a, -1);
   let num = 0;
@@ -506,10 +527,11 @@ function itemCard(w, it, i) {
     <div class="ex-head">${thumb(ex.id, true)}<a href="#/exercise/${ex.id}">${esc(ex.name)}</a><button class="ic sm" data-a="itMenu" ${d}>⋮</button></div>
     <div class="muted small">${prev.length ? 'Прошлый раз: ' + prev.map(s => setTxt(s, ex.kind)).join(' · ') : 'Раньше не выполнялось'}</div>
     ${sg ? `<div class="hint">${sg.text}</div>` : ''}
+    ${wu.length ? `<button class="hint wu" data-a="warmAdd" ${d}>🔥 Разминка: ${wu.map(x => `${n(x.w)}×${x.r}`).join(' · ')} <b>— добавить</b></button>` : ''}
     ${it.note ? `<div class="small" style="margin-top:4px">📝 ${esc(it.note)}</div>` : ''}
     ${it.sets.length ? `<div class="set-row head"><span>#</span><span>${k.a}</span><span>${k.b}</span><span></span></div>` : ''}
     ${it.sets.map((s, j) => {
-      const p = prev[j] || prev[prev.length - 1] || {}, warm = s.t === 'w';
+      const pj = match(j), warm = s.t === 'w', p = pj || (warm ? prevWarm : prevWork).slice(-1)[0] || {};
       // подсказка в пустом поле: прошлый результат, для рабочих подходов — с рекомендованной прибавкой
       const up = sg && !warm && p.t !== 'w';
       // если упражнение раньше не делали — подсказываем вес из предыдущего подхода этой же тренировки
@@ -525,9 +547,9 @@ function itemCard(w, it, i) {
         <button class="num t-${s.t || 'n'}" data-a="setType" ${d} data-s="${j}" aria-label="Тип подхода">${s.t ? SET_TYPES[s.t][1] : ++num}</button>
         ${field('w', s.w, pw)}${field('r', s.r, pr ?? it.planR)}
         <button class="chk" data-a="setToggle" ${d} data-s="${j}" aria-label="Подход выполнен">✓</button>
-        ${s.done && (prev[j] || record || (s.f && !rate)) ? `<div class="delta">
+        ${s.done && (pj || record || (s.f && !rate)) ? `<div class="delta">
           ${record ? `<span class="up">🏆 рекорд</span>` : ''}
-          ${prev[j] ? `${s.w || prev[j].w ? dl((s.w || 0) - (prev[j].w || 0), k.a) : ''} ${dl((s.r || 0) - (prev[j].r || 0), k.b)}` : ''}
+          ${pj ? `${s.w || pj.w ? dl((s.w || 0) - (pj.w || 0), k.a) : ''} ${dl((s.r || 0) - (pj.r || 0), k.b)}` : ''}
           ${s.f && !rate ? `<span class="fdot f${s.f}">${FEEL[s.f][0]}</span>` : ''}</div>` : ''}
         ${rate ? `<div class="feel"><span class="muted">Как дался подход?</span>${[1, 2, 3].map(v =>
           `<button class="${s.f === v ? 'on f' + v : ''}" data-a="setFeel" ${d} data-s="${j}" data-v="${v}">${FEEL[v][0]}</button>`).join('')}</div>` : ''}</div>`;
@@ -993,6 +1015,7 @@ async function loadPhotos() {
     if (db.photoCount !== photos.length) { db.photoCount = photos.length; save(); }
   } catch (e) { photos = []; toast('Хранилище фото недоступно'); }
   if (location.hash.startsWith('#/measures') && mType === 'photo') render();
+  if (typeof IS_PC !== 'undefined' && IS_PC) pcPhotoCache();   // на ПК — обновить фото, которые уйдут на телефон
 }
 // уменьшаем снимок до 1280 пикселей по длинной стороне — этого хватает для сравнения, а места уходит в разы меньше
 function shrink(file) {
@@ -1063,6 +1086,7 @@ function pgMore() {
       ${[0, 30, 45, 60, 90, 120, 150, 180, 240, 300].map(v => opt(v, v ? fmtDur(v * 1000) : 'Выключен', s.rest)).join('')}</select></label>
     <label class="switch"><span>Звук по окончании отдыха</span><input type="checkbox" data-in="setting" data-k="sound" ${s.sound ? 'checked' : ''}></label>
     <label class="switch"><span>Вибрация</span><input type="checkbox" data-in="setting" data-k="vibro" ${s.vibro ? 'checked' : ''}></label>
+    <label class="switch"><span>Предлагать разминочные подходы</span><input type="checkbox" data-in="setting" data-k="warmup" ${s.warmup !== false ? 'checked' : ''}></label>
     <label class="switch"><span>Не гасить экран во время тренировки</span><input type="checkbox" data-in="setting" data-k="keepOn" ${s.keepOn !== false ? 'checked' : ''}></label>
     <label class="switch"><span>Тема</span><select data-in="setting" data-k="theme">
       ${opt('dark', 'Тёмная', s.theme)}${opt('light', 'Светлая', s.theme)}${opt('auto', 'Как в системе', s.theme)}</select></label>
@@ -1844,7 +1868,9 @@ const actions = {
   },
   start(d) {
     const p = P(d.p), day = p.days[d.d];
-    newWorkout(day.name, day.items.map(pi => ({ exId: pi.exId, rest: pi.rest || null, planR: pi.reps, ss: !!pi.ss, note: '', sets: emptySets(pi.sets) })), { pid: p.id, di: +d.d });
+    // в лёгкую неделю подходов вдвое меньше
+    const light = deloadOn();
+    newWorkout(day.name, day.items.map(pi => ({ exId: pi.exId, rest: pi.rest || null, planR: pi.reps, ss: !!pi.ss, note: '', sets: emptySets(light ? Math.max(1, Math.ceil(pi.sets / 2)) : pi.sets) })), { pid: p.id, di: +d.d, ...(light ? { deload: true } : {}) });
   },
   async wRename(d) {
     const w = W(d.w), r = await form('Название тренировки', [{ name: 'name', label: 'Название', value: w.name }]);
@@ -1973,6 +1999,14 @@ const actions = {
     if (v === 'del') it.sets.splice(d.s, 1);
     else if (v) s.t = v;
     else delete s.t;
+    save(); render();
+  },
+  warmAdd(d) {
+    const w = W(d.w), it = w.items[d.x], ex = exById(it.exId), prev = prevSets(it.exId, w.id, w.start).filter(x => x.t !== 'w');
+    const sg = suggest(it, prev), work = (it.sets.find(x => x.t !== 'w' && x.w) || {}).w || Math.max(0, ...prev.map(x => x.w || 0)) + (sg && sg.dw || 0);
+    const plan = warmupPlan(ex, work);
+    if (!plan.length) return;
+    it.sets.unshift(...plan.map(x => ({ w: x.w, r: x.r, done: false, t: 'w' })));
     save(); render();
   },
   setToggle(d, el) {
@@ -2357,7 +2391,7 @@ const actions = {
   },
   async wipe() {
     if (await confirmDlg('Удалить все тренировки, программы и замеры без возможности восстановления?', 'Удалить всё')) {
-      db = fresh(); stopRest(); save();
+      db = fresh(); stopRest(); save(); syncResetBase();
       try { await photoStore('readwrite', st => st.clear()); photos = []; } catch (e) { /* фото не было */ }
       render(); toast('Данные удалены');
     }
@@ -2426,6 +2460,7 @@ $('#imp').addEventListener('change', async e => {
     if (!d || !d.version || !Array.isArray(d.workouts) || !Array.isArray(d.exercises)) throw new Error('bad');
     if (!await confirmDlg(`Заменить текущие данные копией (${d.workouts.length} тренировок)?`, 'Заменить')) return;
     db = { ...fresh(), ...d, settings: { ...fresh().settings, ...d.settings } };
+    syncResetBase();
     save(); render(); toast('Данные восстановлены');
   } catch (err) { toast('Это не файл резервной копии GymLog'); }
 });
@@ -2448,6 +2483,6 @@ syncReminders();
 if (navigator.storage && navigator.storage.persist) navigator.storage.persist();
 if (!NATIVE && 'serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js');
 
-render();
-drawRest();
+// первая отрисовка — когда загружены и модули после app.js (анализ, синхронизация, фото, советы)
+document.addEventListener('DOMContentLoaded', () => { render(); drawRest(); });
 if (NATIVE && db.settings.updAuto !== false && updOk()) Android.update(updUrl(), false);
