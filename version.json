@@ -1,9 +1,10 @@
 {
- "version": 23,
- "name": "1.22",
- "notes": "139 новых упражнений с фото, техникой и схемой мышц — в справочнике теперь 299",
+ "version": 24,
+ "name": "1.23",
+ "notes": "Анализ и советы: разбор каждой тренировки, прогресс по упражнениям, объём на мышцы, баланс, усталость, отчёт для ИИ",
  "files": {
-  "app.js": "9b5a6b081a7cae1e45a05454594f4e3252ede017aa2a92d353974caa69d43fd6",
+  "analysis.js": "2ec5042c879fd581bf95bec6ba17fb00e25a9c2a839024ead3703b8e23c6d92d",
+  "app.js": "c66cd80c591370e9b905bc2e04706cd726866c9bf86db03b75c0b8850e29b5ca",
   "body.js": "f36e17c0e3042e0d83ed19f3af9db9c38b938948168864ae30cd29f0e849ee91",
   "exercises.js": "5378eb5d0e6a0e11f7a6dd9d5d1bab2383d647205e2b12c393fffb58f92068bb",
   "guide.js": "aa96bfa9227f102dd5e90d81bedbfc6aa87291fdf680f17eb25731fe80d20058",
@@ -666,11 +667,11 @@
   "img/s8_1.jpg": "bebe29fab84e28573cbc3bc47af34c6d0f6cdce8f26e942c87bde08352e05f71",
   "img/s9_0.jpg": "29ae8af3f71c422b5bf0491404bd80c33fd57aa0efe6f559e7ff3f51f6f5038b",
   "img/s9_1.jpg": "d54074a718c16ef774b8725877d3a0b09f92a16a573a2a3eac5490f9ef14a946",
-  "index.html": "dd61badf6aedfa5c7a23fb1bb069b1935a5f1d254eca91a31d07a236eb9d3d22",
+  "index.html": "761231624e4fb9d91418a167d6bdca0ee6b02211ecf7402d03bbc814b940030b",
   "manifest.json": "94842a0eaf89b834d9943206744fba3df196f42d84693cd9b17c2d14095c52e0",
   "programs.js": "5612639d216114f5957b9aadc8b0cc6394bbb64aabe097eb22ed3119fc4ead2e",
   "stretch.js": "ef1fa9057c00f5dcc3c0dcd116e20c0435c796ce7357a5bf5b84450a03169e36",
-  "styles.css": "309db088a319f1f526107698a9f80a6989d22d3ab79cafe1af1524cef62b8821",
+  "styles.css": "72a85c964c442e5bc840c71454b15a5fd1e4228a32088f2fc8423a6200c9da7d",
   "sw.js": "55ea225a9c6f5a5541c222872bda93f70fd72886921db6b0d6cb01a12919a8a8",
   "tech.js": "04f0a36a7e1193fe6b9c56cbeae4e104619d2c667c0d153530240876a60d75de"
  }

@@ -484,6 +484,7 @@ function pgProgress() {
     <div class="tile"><b>${tons(wk.ton)}</b><span>поднято за неделю</span></div>
     <div class="tile"><b>${weekStreaks().cur}</b><span>недель подряд</span></div>
   </div>
+  ${hub('#/analysis', '🧠', 'Анализ и советы', 'Что растёт, что застряло, перекосы в нагрузке и что делать дальше')}
   ${hub('#/stats', '📊', 'Сводка и графики', 'Тоннаж, сила, нагрузка по мышцам по неделям и месяцам')}
   ${hub('#/awards', '🏆', 'Достижения', `Получено уровней: ${got} из ${all}`)}
   ${hub('#/history', '🗓️', 'История тренировок', total ? `Всего тренировок: ${total} · календарь и список` : 'Здесь появятся ваши тренировки')}
@@ -545,6 +546,7 @@ function pgWorkout(id) {
   <div class="sub">${fmtDate(w.start)} · <span ${w.end ? '' : `data-elapsed="${w.start}"`}>${fmtDur((w.end || Date.now()) - w.start)}</span>
     · ${s.sets} подх.${s.ton ? ` · ${n(Math.round(s.ton))} кг` : ''}</div>
   ${w.note ? `<div class="note">${esc(w.note)}</div>` : ''}
+  ${w.end ? workoutReportHtml(w) + '<h2>Упражнения</h2>' : ''}
   ${w.end ? '' : tip('workout', 'Кнопки − и + меняют вес и повторы без клавиатуры. Нажмите на номер подхода, чтобы отметить разминочный или дроп-сет. Нажмите на фото, чтобы посмотреть технику. В меню ⋮ — суперсет, заметка и время отдыха.')}
   ${w.items.map((it, i) => itemCard(w, it, i)).join('') || `<div class="empty">Добавьте первое упражнение</div>`}
   <button class="btn block" data-a="wAddEx" data-w="${w.id}">+ Добавить упражнение</button>
@@ -1738,12 +1740,13 @@ window.onNativeUpdate = r => {
 };
 
 /* ---------- маршруты ---------- */
-const pages = { workouts: pgWorkouts, workout: pgWorkout, programs: pgPrograms, program: pgProgram, exercises: pgExercises, exercise: pgExercise, measures: pgMeasures, more: pgMore, stats: pgStats, awards: pgAwards, health: pgHealth, stretch: pgStretch, history: pgHistory, progress: pgProgress, catalog: pgCatalog, pick: () => pgPick(false), supps: pgSupps, glossary: pgGlossary, meals: pgMeals, cycle: pgCycle };
-const tabOf = { workout: 'workouts', program: 'programs', exercise: 'exercises', stats: 'progress', awards: 'progress', history: 'progress', measures: 'progress', catalog: 'programs', pick: 'programs', health: 'more', stretch: 'more', supps: 'more', glossary: 'more', meals: 'more', cycle: 'more' };
+const pages = { workouts: pgWorkouts, workout: pgWorkout, programs: pgPrograms, program: pgProgram, exercises: pgExercises, exercise: pgExercise, measures: pgMeasures, more: pgMore, stats: pgStats, awards: pgAwards, health: pgHealth, stretch: pgStretch, history: pgHistory, progress: pgProgress, catalog: pgCatalog, pick: () => pgPick(false), supps: pgSupps, glossary: pgGlossary, meals: pgMeals, cycle: pgCycle, analysis: pgAnalysis };
+const tabOf = { analysis: 'progress', workout: 'workouts', program: 'programs', exercise: 'exercises', stats: 'progress', awards: 'progress', history: 'progress', measures: 'progress', catalog: 'programs', pick: 'programs', health: 'more', stretch: 'more', supps: 'more', glossary: 'more', meals: 'more', cycle: 'more' };
 function render() {
   const [page, id, sub] = (location.hash.slice(2) || 'workouts').split('/');
   const fn = pages[page] || pgWorkouts;
   $('#app').innerHTML = fn(id, sub);
+  $('#app').classList.toggle('wide', page === 'analysis');   // на широком экране (ПК) анализ раскладывается в две колонки
   const tab = tabOf[page] || (pages[page] ? page : 'workouts');
   document.querySelectorAll('#tabs a').forEach(a => a.classList.toggle('on', a.dataset.tab === tab));
   document.documentElement.dataset.theme = db.settings.theme;
@@ -1976,7 +1979,7 @@ const actions = {
       if (s.w == null) s.w = num(iw.placeholder);
       if (s.r == null) s.r = num(ir.placeholder);
       if (s.r == null) { toast('Введите ' + kindOf(it.exId).b); ir.focus(); return; }
-      s.done = true;
+      s.done = true; s.at = Date.now();   // время отметки — по нему считается реальный отдых
       // в суперсете сразу идём к следующему упражнению, перед дроп-сетом тоже не отдыхаем
       const next = it.sets[+d.s + 1], noRest = it.ss || (next && next.t === 'd');
       if (!w.end && !noRest) startRest(it.rest || db.settings.rest);
@@ -2333,6 +2336,8 @@ const actions = {
   },
 
   /* данные */
+  anCopy() { copyText(aiReport()).then(ok => toast(ok ? 'Отчёт скопирован — вставьте его в чат с ИИ' : 'Не удалось скопировать — сохраните отчёт файлом')); },
+  anSave() { download(`gymlog-otchet-${isoDay(Date.now())}.txt`, aiReport(), 'text/plain'); },
   exportJson() { download(`gymlog-${isoDay(Date.now())}.json`, JSON.stringify(db), 'application/json'); },
   importJson() { $('#imp').click(); },
   exportCsv() {
