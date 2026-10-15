@@ -103,6 +103,7 @@ function workoutReportHtml(w) {
       <div class="muted small" style="margin-top:6px">Процент — изменение расчётного 1ПМ лучшего подхода (без веса — суммы повторов).</div>` : ''}
     ${r.rest ? `<div class="small" style="margin-top:8px">⏱ Средний отдых: ${fmtSec(r.rest.avg)} (план ${fmtSec(r.rest.plan)})</div>` : ''}
   </section>
+  ${miniFor(w).length ? `<section class="card"><b>Мини-достижения</b>${miniHtml(miniFor(w))}</section>` : ''}
   ${r.good.length ? `<section class="card"><b>Что получилось</b>${r.good.map(t => `<div class="small an-li">${esc(t)}</div>`).join('')}</section>` : ''}
   ${r.bad.length ? `<section class="card"><b>На что обратить внимание</b>${r.bad.map(t => `<div class="small an-li">${esc(t)}</div>`).join('')}
     ${r.bad.some(t => t.startsWith('▼')) ? `<div class="muted small" style="margin-top:6px">Разовый спад — это нормально: сон, питание, стресс. Если он повторяется 2–3 тренировки подряд — смотрите «Анализ и советы».</div>` : ''}</section>` : ''}

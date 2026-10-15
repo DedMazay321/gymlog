@@ -498,3 +498,13 @@ div.li { cursor: default; }
 .hint.wu b { color: var(--accent); font-weight: 600; }
 .an-acts { margin-top: 10px; flex-wrap: wrap; gap: 6px; }
 .an-lift .ex-head a { color: inherit; }
+
+/* тоннаж и мини-достижения */
+.mini { display: flex; gap: 10px; align-items: flex-start; padding: 7px 0; border-bottom: 1px solid var(--line); color: inherit; }
+.mini:last-child { border-bottom: 0; }
+.mini > span { font-size: 18px; line-height: 1.2; }
+.mini .small { line-height: 1.45; }
+.ton-live .bar { height: 8px; border-radius: 4px; background: var(--card2); overflow: hidden; margin-top: 8px; }
+.ton-live .bar i { display: block; height: 100%; border-radius: 4px; background: var(--accent); transition: width .3s; }
+.ton-live.rec { outline: 2px solid var(--ok); outline-offset: -2px; }
+.ton-live.rec .bar i { background: var(--ok); }

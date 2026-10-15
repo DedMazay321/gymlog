@@ -499,6 +499,7 @@ function pgProgress() {
     <div class="tile"><b>${tons(wk.ton)}</b><span>поднято за неделю</span></div>
     <div class="tile"><b>${weekStreaks().cur}</b><span>недель подряд</span></div>
   </div>
+  ${hub('#/tonnage', '🏋️', 'Тоннаж', `Неделя: ${tonsShort(tonPeriod('week', 0))} · месяц: ${tonsShort(tonPeriod('month', 0))} · рекорды и мини-достижения`)}
   ${hub('#/analysis', '🧠', 'Анализ и советы', 'Что растёт, что застряло, перекосы в нагрузке и что делать дальше')}
   ${hub('#/stats', '📊', 'Сводка и графики', 'Тоннаж, сила, нагрузка по мышцам по неделям и месяцам')}
   ${hub('#/awards', '🏆', 'Достижения', `Получено уровней: ${got} из ${all}`)}
@@ -568,7 +569,7 @@ function pgWorkout(id) {
   <div class="sub">${fmtDate(w.start)} · <span ${w.end ? '' : `data-elapsed="${w.start}"`}>${fmtDur((w.end || Date.now()) - w.start)}</span>
     · ${s.sets} подх.${s.ton ? ` · ${n(Math.round(s.ton))} кг` : ''}</div>
   ${w.note ? `<div class="note">${esc(w.note)}</div>` : ''}
-  ${w.end ? workoutReportHtml(w) + '<h2>Упражнения</h2>' : ''}
+  ${w.end ? workoutReportHtml(w) + '<h2>Упражнения</h2>' : tonLiveHtml(w)}
   ${w.end ? '' : tip('workout', 'Кнопки − и + меняют вес и повторы без клавиатуры. Нажмите на номер подхода, чтобы отметить разминочный или дроп-сет. Нажмите на фото, чтобы посмотреть технику. В меню ⋮ — суперсет, заметка и время отдыха.')}
   ${w.items.map((it, i) => itemCard(w, it, i)).join('') || `<div class="empty">Добавьте первое упражнение</div>`}
   <button class="btn block" data-a="wAddEx" data-w="${w.id}">+ Добавить упражнение</button>
@@ -1775,7 +1776,7 @@ function render() {
   const [page, id, sub] = (location.hash.slice(2) || 'workouts').split('/');
   const fn = pages[page] || pgWorkouts;
   $('#app').innerHTML = fn(id, sub);
-  $('#app').classList.toggle('wide', page === 'analysis' || page === 'photoan');   // на широком экране (ПК) анализ раскладывается в две колонки
+  $('#app').classList.toggle('wide', page === 'analysis' || page === 'photoan' || page === 'tonnage');   // на широком экране (ПК) анализ раскладывается в две колонки
   const tab = tabOf[page] || (pages[page] ? page : 'workouts');
   document.querySelectorAll('#tabs a').forEach(a => a.classList.toggle('on', a.dataset.tab === tab));
   document.documentElement.dataset.theme = db.settings.theme;
@@ -1924,12 +1925,15 @@ const actions = {
     save(); syncReminders(); syncAuto(true);
     const news = checkAwards();
     render();
-    if (news.length) {
-      sheet(`<h3>🏆 Новые достижения</h3>${news.map(a => `<div class="li" style="display:block"><b>${a.icon} ${a.title}</b>
-        <div class="muted small">Уровень ${a.level} из ${a.tiers.length}: ${n(a.tiers[a.level - 1])} ${a.what}</div></div>`).join('')}
-        <div class="row end" style="margin-top:14px"><a class="btn ghost" href="#/awards">Все достижения</a>
+    const mini = miniFor(w), ton = wStats(w).ton;
+    if (news.length || mini.length) {
+      sheet(`<h3>💪 Тренировка завершена${ton ? ` · ${tonsShort(ton)}` : ''}</h3>
+        ${mini.length ? `<div class="muted small" style="margin:2px 0 6px">Мини-достижения</div>${miniHtml(mini)}` : ''}
+        ${news.length ? `<div class="muted small" style="margin:10px 0 2px">🏆 Новые достижения</div>${news.map(a => `<div class="li" style="display:block"><b>${a.icon} ${a.title}</b>
+        <div class="muted small">Уровень ${a.level} из ${a.tiers.length}: ${n(a.tiers[a.level - 1])} ${a.what}</div></div>`).join('')}` : ''}
+        <div class="row end" style="margin-top:14px"><a class="btn ghost" href="${news.length ? '#/awards' : '#/tonnage'}">${news.length ? 'Все достижения' : 'Тоннаж'}</a>
         <button class="btn primary" data-a="sheetClose">Отлично</button></div>`);
-    } else toast('Тренировка завершена 💪');
+    } else toast(`Тренировка завершена 💪${ton ? ' Тоннаж: ' + tonsShort(ton) : ''}`);
   },
   wRepeat(d) {
     const w = W(d.w);
@@ -2010,7 +2014,7 @@ const actions = {
     save(); render();
   },
   setToggle(d, el) {
-    const w = W(d.w), it = w.items[d.x], s = it.sets[d.s];
+    const w = W(d.w), it = w.items[d.x], s = it.sets[d.s], tonBefore = wStats(w).ton;
     if (s.done) s.done = false;
     else {
       // пустые поля заполняются подсказкой — результатом прошлой тренировки
@@ -2019,6 +2023,7 @@ const actions = {
       if (s.r == null) s.r = num(ir.placeholder);
       if (s.r == null) { toast('Введите ' + kindOf(it.exId).b); ir.focus(); return; }
       s.done = true; s.at = Date.now();   // время отметки — по нему считается реальный отдых
+      if (!w.end) tonLiveCheck(w, it, s, tonBefore);
       // в суперсете сразу идём к следующему упражнению, перед дроп-сетом тоже не отдыхаем
       const next = it.sets[+d.s + 1], noRest = it.ss || (next && next.t === 'd');
       if (!w.end && !noRest) startRest(it.rest || db.settings.rest);
