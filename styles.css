@@ -508,3 +508,55 @@ div.li { cursor: default; }
 .ton-live .bar i { display: block; height: 100%; border-radius: 4px; background: var(--accent); transition: width .3s; }
 .ton-live.rec { outline: 2px solid var(--ok); outline-offset: -2px; }
 .ton-live.rec .bar i { background: var(--ok); }
+
+/* главные достижения: золото и бриллиант */
+.sp-card { display: flex; gap: 14px; align-items: center; position: relative; overflow: hidden; border: 1px solid transparent; }
+.sp-card .grow { flex: 1; min-width: 0; display: grid; gap: 5px; }
+.sp-card .sp-ic { font-size: 40px; width: 56px; text-align: center; flex: none; position: relative; z-index: 1; }
+.sp-card .grow { position: relative; z-index: 1; }
+.sp-rank { font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.sp-title { font-size: 18px; }
+.sp-note a { color: inherit; text-decoration: underline; }
+.sp-card.gold { border-color: #d9a520; background: linear-gradient(135deg, rgba(255, 196, 50, .22), var(--card) 60%); }
+.sp-card.gold .sp-rank { color: #e0a915; }
+.sp-card.diamond { border-color: #7fd8ff; background: linear-gradient(135deg, rgba(120, 220, 255, .28), rgba(190, 150, 255, .18) 45%, var(--card) 75%); }
+.sp-card.diamond .sp-rank { background: linear-gradient(90deg, #5fd4ff, #b28bff, #5fd4ff); background-size: 200% 100%; -webkit-background-clip: text; background-clip: text; color: transparent; animation: sp-shine 3s linear infinite; }
+.sp-card.diamond:not(.locked)::after { content: ''; position: absolute; inset: 0; background: linear-gradient(110deg, transparent 35%, rgba(255, 255, 255, .28) 50%, transparent 65%); background-size: 250% 100%; animation: sp-sweep 3.2s ease-in-out infinite; pointer-events: none; }
+.sp-card.diamond:not(.locked) .sp-ic { animation: sp-glow 2.4s ease-in-out infinite; }
+.sp-card.locked { border-style: dashed; background: var(--card); }
+.sp-card.locked .sp-ic { filter: grayscale(1); opacity: .5; }
+.sp-card.gold .bar i { background: #e0a915; }
+.sp-card.diamond .bar i { background: linear-gradient(90deg, #5fd4ff, #b28bff); }
+.sp-cele { position: relative; text-align: center; padding: 10px 6px 4px; overflow: hidden; border-radius: 16px; }
+.sp-cele.diamond { background: radial-gradient(circle at 50% 25%, rgba(120, 220, 255, .35), rgba(178, 139, 255, .18) 45%, transparent 75%); }
+.sp-cele.gold { background: radial-gradient(circle at 50% 25%, rgba(255, 196, 50, .35), transparent 70%); }
+.sp-cele .sp-gem { font-size: 84px; line-height: 1; margin: 10px 0 8px; animation: sp-pop .7s cubic-bezier(.2, 1.6, .4, 1) both, sp-glow 2.4s 0.7s ease-in-out infinite; }
+.sp-cele h3 { font-size: 26px; margin: 6px 0; }
+.sp-cele > b { display: block; margin-bottom: 8px; }
+.sp-cele .small { line-height: 1.5; }
+.sp-cele.diamond .sp-rank { background: linear-gradient(90deg, #5fd4ff, #b28bff, #5fd4ff); background-size: 200% 100%; -webkit-background-clip: text; background-clip: text; color: transparent; animation: sp-shine 2.5s linear infinite; font-size: 13px; }
+.sp-cele.gold .sp-rank { color: #e0a915; font-size: 13px; }
+.sp-sparks { position: absolute; inset: 0; pointer-events: none; }
+.sp-sparks i { position: absolute; width: 8px; height: 8px; border-radius: 50%; background: #fff; opacity: 0; animation: sp-twinkle 1.8s ease-in-out infinite; }
+.sp-cele.diamond .sp-sparks i { background: #9fe6ff; box-shadow: 0 0 10px #7fd8ff; }
+.sp-cele.gold .sp-sparks i { background: #ffd35a; box-shadow: 0 0 10px #ffc432; }
+.sp-sparks i:nth-child(1) { left: 10%; top: 16%; animation-delay: 0.00s; }
+.sp-sparks i:nth-child(2) { left: 47%; top: 69%; animation-delay: 0.23s; }
+.sp-sparks i:nth-child(3) { left: 84%; top: 52%; animation-delay: 0.46s; }
+.sp-sparks i:nth-child(4) { left: 29%; top: 35%; animation-delay: 0.69s; }
+.sp-sparks i:nth-child(5) { left: 66%; top: 18%; animation-delay: 0.92s; }
+.sp-sparks i:nth-child(6) { left: 11%; top: 71%; animation-delay: 1.15s; }
+.sp-sparks i:nth-child(7) { left: 48%; top: 54%; animation-delay: 1.38s; }
+.sp-sparks i:nth-child(8) { left: 85%; top: 37%; animation-delay: 1.61s; }
+.sp-sparks i:nth-child(9) { left: 30%; top: 20%; animation-delay: 1.84s; }
+.sp-sparks i:nth-child(10) { left: 67%; top: 73%; animation-delay: 2.07s; }
+.sp-sparks i:nth-child(11) { left: 12%; top: 56%; animation-delay: 2.30s; }
+.sp-sparks i:nth-child(12) { left: 49%; top: 39%; animation-delay: 2.53s; }
+.sp-sparks i:nth-child(13) { left: 86%; top: 22%; animation-delay: 2.76s; }
+.sp-sparks i:nth-child(14) { left: 31%; top: 5%; animation-delay: 2.99s; }
+@keyframes sp-shine { to { background-position: -200% 0; } }
+@keyframes sp-sweep { 0% { background-position: 150% 0; } 60%, 100% { background-position: -100% 0; } }
+@keyframes sp-glow { 0%, 100% { filter: drop-shadow(0 0 4px rgba(127, 216, 255, .5)); transform: scale(1); } 50% { filter: drop-shadow(0 0 14px rgba(127, 216, 255, .95)); transform: scale(1.06); } }
+@keyframes sp-pop { from { transform: scale(.2) rotate(-20deg); opacity: 0; } to { transform: scale(1) rotate(0); opacity: 1; } }
+@keyframes sp-twinkle { 0%, 100% { opacity: 0; transform: scale(.4); } 50% { opacity: 1; transform: scale(1.2); } }
+@media (prefers-reduced-motion: reduce) { .sp-card *, .sp-card::after, .sp-cele * { animation: none !important; } }

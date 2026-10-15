@@ -502,7 +502,7 @@ function pgProgress() {
   ${hub('#/tonnage', '🏋️', 'Тоннаж', `Неделя: ${tonsShort(tonPeriod('week', 0))} · месяц: ${tonsShort(tonPeriod('month', 0))} · рекорды и мини-достижения`)}
   ${hub('#/analysis', '🧠', 'Анализ и советы', 'Что растёт, что застряло, перекосы в нагрузке и что делать дальше')}
   ${hub('#/stats', '📊', 'Сводка и графики', 'Тоннаж, сила, нагрузка по мышцам по неделям и месяцам')}
-  ${hub('#/awards', '🏆', 'Достижения', `Получено уровней: ${got} из ${all}`)}
+  ${hub('#/awards', '🏆', 'Достижения', `Получено уровней: ${got} из ${all} · ${SPECIAL.map(a => { const st = specialState(a); return a.icon + ' ' + (st.got ? 'взято' : `осталось ${n(Math.max(0, a.kg - st.best))} кг`); }).join(' · ')}`)}
   ${hub('#/history', '🗓️', 'История тренировок', total ? `Всего тренировок: ${total} · календарь и список` : 'Здесь появятся ваши тренировки')}
   ${hub('#/measures', '📏', 'Замеры тела', weight ? `Вес: ${n(weight.value)} кг · обхваты и графики` : 'Вес, обхваты и графики изменений')}
   ${hub('#/measures/photo', '📷', 'Фото прогресса', db.photoCount ? `Снимков: ${db.photoCount} · сравнение и анализ изменений` : 'Сравнение «было и стало» и анализ изменений')}`;
@@ -1373,6 +1373,7 @@ function pgAwards() {
   return `<header class="top"><a class="ic" href="#/progress">‹</a><h1>Достижения</h1></header>
   <section class="card"><b>Получено уровней: ${got} из ${all}</b>
     <div class="bar" style="margin-top:10px"><i style="width:${Math.round(got / all * 100)}%"></i></div></section>
+  ${specialHtml()}
   ${list.map((a, i) => {
     const head = i && list[i - 1].g === a.g ? '' : `<h2>${AWARD_GROUPS[a.g]}</h2>`;
     const next = a.tiers[a.level], from = a.level ? a.tiers[a.level - 1] : 0, val = +(+a.value).toFixed(1);
@@ -1925,6 +1926,9 @@ const actions = {
     save(); syncReminders(); syncAuto(true);
     const news = checkAwards();
     render();
+    // главное достижение, не отпразднованное во время тренировки (например, подход отмечен уже после завершения)
+    const sp = checkSpecial();
+    for (const a of sp) await celebrate(a, false);
     const mini = miniFor(w), ton = wStats(w).ton;
     if (news.length || mini.length) {
       sheet(`<h3>💪 Тренировка завершена${ton ? ` · ${tonsShort(ton)}` : ''}</h3>
@@ -2023,7 +2027,7 @@ const actions = {
       if (s.r == null) s.r = num(ir.placeholder);
       if (s.r == null) { toast('Введите ' + kindOf(it.exId).b); ir.focus(); return; }
       s.done = true; s.at = Date.now();   // время отметки — по нему считается реальный отдых
-      if (!w.end) tonLiveCheck(w, it, s, tonBefore);
+      if (!w.end) { tonLiveCheck(w, it, s, tonBefore); specialLiveCheck(w, it, s); }
       // в суперсете сразу идём к следующему упражнению, перед дроп-сетом тоже не отдыхаем
       const next = it.sets[+d.s + 1], noRest = it.ss || (next && next.t === 'd');
       if (!w.end && !noRest) startRest(it.rest || db.settings.rest);
