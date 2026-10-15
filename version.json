@@ -1,7 +1,7 @@
 {
- "version": 29,
- "name": "1.28",
- "notes": "Главные достижения: бриллиантовое «Сотка в жиме» (100 кг) и золотое «Полторашка в приседе» (150 кг) с празднованием прямо на тренировке",
+ "version": 30,
+ "name": "1.29",
+ "notes": "Бриллиантовое достижение теперь называется «Самая заветная сотка»",
  "files": {
   "advice.js": "4b9a3e53da55c75bc98db96066a0ce24ae33c32fbd11685e54fbd09d9887f397",
   "analysis.js": "15522b6e2891834bbcdddf512eab01932118527c90d83e3a565391e002c2159f",
@@ -672,7 +672,7 @@
   "manifest.json": "94842a0eaf89b834d9943206744fba3df196f42d84693cd9b17c2d14095c52e0",
   "photoan.js": "e0ca4fd805b66d58bbd929f6abd9e0c1bd6fd5d961856ca9343660e358d96eb2",
   "programs.js": "610426d324c03b9769156fa3e36c59c3bc741ae5cc61e2058f2196a8877aeefd",
-  "special.js": "9f3edfd420f1de3aeb05bb465e452a27bc052f32a4be6b1c81b46f92d00e64d3",
+  "special.js": "fe07446570842c87daf9320e3917a19f04c0daf08350ffb478a98956926beec8",
   "stretch.js": "ef1fa9057c00f5dcc3c0dcd116e20c0435c796ce7357a5bf5b84450a03169e36",
   "styles.css": "86469c2b89ba133e39c6de998f56e229e8ed037dddf219ffda24204ce8f8bed7",
   "sw.js": "55ea225a9c6f5a5541c222872bda93f70fd72886921db6b0d6cb01a12919a8a8",
