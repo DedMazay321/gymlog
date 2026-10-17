@@ -140,16 +140,19 @@ async function syncPhotosIn(list, gone) {
     const have = await photoStore('readonly', st => st.getAllKeys());
     for (const id of have) if (gone[id]) await photoStore('readwrite', st => st.delete(id));
     if (list.length || have.some(id => gone[id])) { photos = null; await loadPhotos(); render(); }
-  } catch (e) { toast('Не удалось сохранить фото: ' + e.message); }
+  } catch (e) { glog.add('error', 'Фото при синхронизации: ' + e.message, e.stack); toast('Не удалось сохранить фото: ' + e.message); }
 }
 // ПК вызывает эту функцию, когда телефон прислал данные; в ответе — объединённые данные для телефона.
 window.syncIncoming = text => {
   try {
-    const { st, reply } = mergeIncoming(JSON.parse(text));
+    const d = JSON.parse(text);
+    savePhoneLog(d.logs, (d.sync || {}).device);
+    const { st, reply } = mergeIncoming(d);
+    glog.add('info', `Синхронизация с телефоном: на ПК +${st.pc.added} ~${st.pc.updated} −${st.pc.removed}, на телефон +${st.added} ~${st.updated} −${st.removed}, фото принято ${st.photos}, отдано ${st.back}`);
     const pc = st.pc;
     setTimeout(() => { render(); toast(`Синхронизация с телефоном: новых ${pc.added}, изменено ${pc.updated}${pc.removed ? `, удалено ${pc.removed}` : ''}${st.photos ? `, фото ${st.photos}` : ''}`); }, 0);
     return JSON.stringify({ ok: true, added: st.added, updated: st.updated, removed: st.removed, photos: st.photos, back: st.back, total: db.workouts.length, ...reply });
-  } catch (e) { return JSON.stringify({ ok: false, error: e.message }); }
+  } catch (e) { glog.add('error', 'Синхронизация на ПК: ' + e.message, e.stack); return JSON.stringify({ ok: false, error: e.message }); }
 };
 // Телефон применяет объединённые данные из ответа ПК.
 function applyFromPc(res) {
@@ -173,6 +176,7 @@ let syncFound = null, syncInfo = null, syncBusy = false;
 window.onNativeSync = r => {
   if (r.state === 'info') { syncInfo = r; if (location.hash === '#/sync') render(); return; }
   if (r.state === 'found') {
+    glog.add('info', 'Поиск ПК: найдено ' + (r.list || []).length);
     syncFound = r.list || [];
     syncBusy = false;
     if (location.hash === '#/sync') render();
@@ -181,12 +185,13 @@ window.onNativeSync = r => {
   }
   if (r.state === 'pushed') {
     syncBusy = false;
+    glog.add(r.code === 200 ? 'info' : 'warn', `Синхронизация: ответ ${r.code || '—'}${r.message ? ' — ' + r.message : ''}, ${Math.round((r.body || '').length / 1024)} КБ`);
     const c = syncCfg();
     let res = {};
     try { res = JSON.parse(r.body || '{}'); } catch (e) { /* пустой ответ */ }
     if (r.code === 200 && res.ok) {
       if (c.pending) { c.host = c.pending.host; c.port = c.pending.port; c.name = c.pending.name; c.code = c.pending.code; c.sent = {}; delete c.baseId; delete c.pending; }
-      c.lastOut = Date.now(); c.lastErr = ''; c.sent = { ...(c.sent || {}), ...(c.sending || {}) }; delete c.sending;
+      c.lastOut = Date.now(); c.lastErr = ''; if (c.logSending) c.logSent = c.logSending; delete c.logSending; c.sent = { ...(c.sent || {}), ...(c.sending || {}) }; delete c.sending;
       // не все фото поместились — отправляем следующую порцию
       if (c.more || res.morePhotos) setTimeout(() => syncPush(false), 800);
       delete c.more;
@@ -235,8 +240,13 @@ async function syncPush(manual, target) {
   syncSave(c2);
   let have = [];
   try { have = await photoStore('readonly', st => st.getAllKeys()); } catch (e) { /* фото нет */ }
-  const meta = { baseId: target ? null : c.baseId || null, have };
-  Android.syncPush(t.host, +t.port || SYNC_PORT, String(t.code), JSON.stringify({ ...db, photos: ph, sync: meta }), !!manual);
+  const logs = glog.since(c.logSent || 0).slice(-400);
+  const meta = { baseId: target ? null : c.baseId || null, have, device: window.Android && Android.deviceInfo ? Android.deviceInfo() : '' };
+  const body = JSON.stringify({ ...db, photos: ph, sync: meta, logs });
+  c2.logSending = logs.length ? logs[logs.length - 1].t : c2.logSent || 0;
+  syncSave(c2);
+  glog.add('info', `Синхронизация: отправка ${Math.round(body.length / 1024)} КБ, фото ${ph.length}, записей журнала ${logs.length}${manual ? ' (вручную)' : ''}`);
+  Android.syncPush(t.host, +t.port || SYNC_PORT, String(t.code), body, !!manual);
   return true;
 }
 // автоматически — после завершения тренировки и при запуске, если с прошлой отправки прошло больше 6 часов

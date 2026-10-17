@@ -281,6 +281,7 @@ function form(title, fields, extra = '') {
 }
 let toastT;
 function toast(text) {
+  glog.add('toast', text);
   const el = $('#toast');
   el.textContent = text; el.hidden = false;
   clearTimeout(toastT); toastT = setTimeout(() => el.hidden = true, 2500);
@@ -555,6 +556,14 @@ function itemCard(w, it, i) {
         ${rate ? `<div class="feel"><span class="muted">Как дался подход?</span>${[1, 2, 3].map(v =>
           `<button class="${s.f === v ? 'on f' + v : ''}" data-a="setFeel" ${d} data-s="${j}" data-v="${v}">${FEEL[v][0]}</button>`).join('')}</div>` : ''}</div>`;
     }).join('')}
+    ${(() => {
+      if (w.end || linked) return '';
+      const blocks = wBlocks(w.items), bi = blocks.findIndex(b => b[0] === it), b = blocks[bi];
+      if (!b || blockStarted(b)) return '';
+      const first = blocks.findIndex(x => !blockStarted(x)), now = bi > first, later = bi < blocks.length - 1;
+      return now || later ? `<div class="row ord">${now ? `<button class="btn sm" data-a="itOrder" ${d} data-v="next">▶ Сделать сейчас</button>` : ''}
+        ${later ? `<button class="btn sm ghost" data-a="itOrder" ${d} data-v="end">⏭ Занято — позже</button>` : ''}</div>` : '';
+    })()}
     <div class="row"><button class="btn sm" data-a="setAdd" ${d}>+ Подход</button>
       ${w.end ? '' : `<button class="btn sm" data-a="itSwap" ${d}>⇄ Заменить</button>`}
       ${it.sets.length ? `<button class="btn sm ghost" data-a="setDel" ${d}>− Подход</button>` : ''}</div>
@@ -1116,6 +1125,7 @@ function pgMore() {
   </section>
   <h2>Данные</h2>
   <section class="card">
+    <a class="li" href="#/log"><span>🧾 Журнал для разработчика</span><span class="muted">${glog.all().some(e => e.l === 'error') ? '<span class="down">есть ошибки</span> ' : ''}›</span></a>
     <a class="li" href="#/sync"><span>${IS_PC ? '📲 Синхронизация с телефоном' : '💻 Синхронизация с ПК'}</span><span class="muted">›</span></a>
     <button class="li" data-a="exportJson"><span>Сохранить резервную копию</span><span class="muted small">.json</span></button>
     <button class="li" data-a="importJson"><span>Восстановить из копии</span><span class="muted small">.json</span></button>
@@ -1758,8 +1768,9 @@ const DEFAULT_UPDATE_URL = "https://raw.githubusercontent.com/DedMazay321/gymlog
 const updUrl = () => (db.settings.updUrl || DEFAULT_UPDATE_URL).trim().replace(/\/+$/, '');
 const updOk = () => updUrl().startsWith('https://');
 let ver = { version: 0, name: "" };
-fetch("version.json", { cache: "no-store" }).then(r => r.json()).then(v => { ver = v; if (location.hash === "#/more") render(); }).catch(() => {});
+fetch("version.json", { cache: "no-store" }).then(r => r.json()).then(v => { ver = v; glog.add("info", "Версия приложения " + v.name); if (location.hash === "#/more") render(); }).catch(e => glog.add("warn", "version.json: " + e.message));
 window.onNativeUpdate = r => {
+  if (r.state !== 'progress') glog.add(r.state === 'error' ? 'warn' : 'info', 'Обновление: ' + r.state + (r.name ? ' ' + r.name : '') + (r.message ? ' — ' + r.message : '') + (r.manual ? ' (вручную)' : ''));
   const btn = $("#updBtn");
   if (r.state === "progress") { if (btn) btn.textContent = `Загрузка ${r.done} из ${r.total}…`; return; }
   if (btn) { btn.disabled = false; btn.textContent = "Проверить обновления"; }
@@ -1776,7 +1787,13 @@ const tabOf = { analysis: 'progress', workout: 'workouts', program: 'programs', 
 function render() {
   const [page, id, sub] = (location.hash.slice(2) || 'workouts').split('/');
   const fn = pages[page] || pgWorkouts;
-  $('#app').innerHTML = fn(id, sub);
+  try { $('#app').innerHTML = fn(id, sub); }
+  catch (e) {
+    glog.add('error', `Экран «${page || 'workouts'}» не открылся: ${e.message}`, e.stack);
+    $('#app').innerHTML = `<header class="top"><a class="ic" href="#/workouts">‹</a><h1>Что-то пошло не так</h1></header>
+      <section class="card"><div class="small">Этот экран не открылся из-за ошибки в приложении. Ваши данные не пострадали. Ошибка записана в журнал: «Ещё» → «Журнал для разработчика».</div>
+      <div class="muted small" style="margin-top:6px">${esc(e.message)}</div></section><a class="btn block" href="#/workouts">На главную</a>`;
+  }
   $('#app').classList.toggle('wide', page === 'analysis' || page === 'photoan' || page === 'tonnage');   // на широком экране (ПК) анализ раскладывается в две колонки
   const tab = tabOf[page] || (pages[page] ? page : 'workouts');
   document.querySelectorAll('#tabs a').forEach(a => a.classList.toggle('on', a.dataset.tab === tab));
@@ -1794,6 +1811,36 @@ function newWorkout(name, items, link = {}) {
   const w = { id: uid(), start: Date.now(), end: null, name, note: '', items, ...link };
   if (link.pid) db.activeProgram = link.pid;
   db.workouts.push(w); save(); go('#/workout/' + w.id);
+}
+// Суперсет — упражнения подряд, связанные флагом ss: при перестановке они двигаются вместе.
+function wBlocks(items) {
+  const out = [];
+  items.forEach((it, i) => { if (i && items[i - 1].ss) out[out.length - 1].push(it); else out.push([it]); });
+  return out;
+}
+const blockStarted = b => b.some(it => it.sets.some(s => s.done));
+// mode: next — сделать следующим (сразу после начатых), end — в конец, up / down — на одно место
+function reorder(w, i, mode) {
+  const blocks = wBlocks(w.items), bi = blocks.findIndex(b => b.includes(w.items[i]));
+  const [b] = blocks.splice(bi, 1);
+  let to;
+  if (mode === 'end') to = blocks.length;
+  else if (mode === 'next') { to = blocks.findIndex(x => !blockStarted(x)); if (to < 0) to = blocks.length; }
+  else if (mode === 'up') to = Math.max(0, bi - 1);
+  else to = Math.min(blocks.length, bi + 1);
+  blocks.splice(to, 0, b);
+  w.items = blocks.flat();
+  return w.items.indexOf(b[0]);
+}
+function orderHtml(w) {
+  const blocks = wBlocks(w.items);
+  return `<h3>Порядок упражнений</h3>
+    <div class="muted small" style="margin-bottom:8px">Стрелками меняйте очередь. Суперсеты двигаются целиком, начатые упражнения отмечены ✓.</div>
+    ${blocks.map((b, k) => { const i = w.items.indexOf(b[0]); return `<div class="ord-row">
+      <div class="grow">${b.map(it => `<div>${blockStarted([it]) ? '✓ ' : ''}${esc(exById(it.exId).name)}</div>`).join('')}${b.length > 1 ? '<div class="muted small">суперсет</div>' : ''}</div>
+      <button class="ic sm" data-a="ordMove" data-w="${w.id}" data-x="${i}" data-v="up" ${k ? '' : 'disabled'} aria-label="Выше">↑</button>
+      <button class="ic sm" data-a="ordMove" data-w="${w.id}" data-x="${i}" data-v="down" ${k < blocks.length - 1 ? '' : 'disabled'} aria-label="Ниже">↓</button></div>`; }).join('')}
+    <div class="row end" style="margin-top:12px"><button class="btn primary" data-a="sheetClose">Готово</button></div>`;
 }
 const emptySets = c => Array.from({ length: c }, () => ({ w: null, r: null, done: false }));
 function download(name, text, type) {
@@ -1880,8 +1927,9 @@ const actions = {
   },
   async wMenu(d) {
     const w = W(d.w);
-    const v = await menu(w.name, [['rename', 'Переименовать'], ['note', 'Заметка к тренировке'], ['date', 'Изменить дату'],
+    const v = await menu(w.name, [w.items.length > 1 ? ['order', 'Порядок упражнений'] : null, ['rename', 'Переименовать'], ['note', 'Заметка к тренировке'], ['date', 'Изменить дату'],
       w.end && !activeW() ? ['resume', 'Продолжить тренировку'] : null, ['del', 'Удалить тренировку', 1]]);
+    if (v === 'order') return actions.wOrder(d);
     if (v === 'rename') return actions.wRename(d);
     if (v === 'note') {
       const r = await form('Заметка', [{ name: 'note', label: 'Текст', type: 'textarea', value: w.note }]);
@@ -1948,12 +1996,11 @@ const actions = {
     const w = W(d.w), i = +d.x, it = w.items[i];
     const v = await menu(exById(it.exId).name, [['swap', 'Заменить упражнение'],
       it.ss ? ['ss', 'Разъединить суперсет'] : i < w.items.length - 1 ? ['ss', 'Суперсет со следующим упражнением'] : null,
-      ['up', 'Переместить выше'], ['down', 'Переместить ниже'], ['note', 'Заметка'],
+      ['order', 'Порядок упражнений…'], ['note', 'Заметка'],
       ['rest', 'Время отдыха для упражнения'], ['stat', 'Статистика упражнения'], ['del', 'Убрать из тренировки', 1]]);
     if (v === 'swap') return actions.itSwap(d);
     if (v === 'ss') it.ss = !it.ss;
-    if (v === 'up') move(w.items, i, -1);
-    if (v === 'down') move(w.items, i, 1);
+    if (v === 'order') return actions.wOrder(d);
     if (v === 'note') {
       const r = await form('Заметка к упражнению', [{ name: 'note', label: 'Текст', type: 'textarea', value: it.note || '' }]);
       if (r) it.note = r.note;
@@ -2008,6 +2055,20 @@ const actions = {
     else if (v) s.t = v;
     else delete s.t;
     save(); render();
+  },
+  itOrder(d) {
+    const w = W(d.w), name = exById(w.items[+d.x].exId).name, j = reorder(w, +d.x, d.v);
+    save(); render();
+    toast(d.v === 'end' ? `«${name}» — в конце, сделаете, когда освободится` : `«${name}» — следующее`);
+    // прокручиваем к упражнению, которое стало следующим
+    if (d.v === 'next') setTimeout(() => { const c = document.querySelectorAll('#app section.card')[j]; if (c) c.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 50);
+  },
+  wOrder(d) { sheet(orderHtml(W(d.w))).then(() => render()); },
+  ordMove(d) {
+    const w = W(d.w);
+    reorder(w, +d.x, d.v); save();
+    const sh = modal.querySelector('.sheet');
+    if (sh) sh.innerHTML = orderHtml(w);
   },
   warmAdd(d) {
     const w = W(d.w), it = w.items[d.x], ex = exById(it.exId), prev = prevSets(it.exId, w.id, w.start).filter(x => x.t !== 'w');
@@ -2451,7 +2512,12 @@ const inputs = {
 
 document.addEventListener('click', e => {
   const el = e.target.closest('[data-a]');
-  if (el && actions[el.dataset.a]) actions[el.dataset.a](el.dataset, el, e);
+  if (!el || !actions[el.dataset.a]) return;
+  if (el.dataset.a !== 'stepVal') glog.add('act', el.dataset.a + ' ' + (location.hash || '#/'));
+  try {
+    const r = actions[el.dataset.a](el.dataset, el, e);
+    if (r && r.catch) r.catch(err => { glog.add('error', `Действие «${el.dataset.a}»: ${err.message}`, err.stack); toast('Ошибка: ' + err.message); });
+  } catch (err) { glog.add('error', `Действие «${el.dataset.a}»: ${err.message}`, err.stack); toast('Ошибка: ' + err.message); }
 });
 document.addEventListener('input', e => {
   const el = e.target.closest('[data-in]');

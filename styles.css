@@ -560,3 +560,15 @@ div.li { cursor: default; }
 @keyframes sp-pop { from { transform: scale(.2) rotate(-20deg); opacity: 0; } to { transform: scale(1) rotate(0); opacity: 1; } }
 @keyframes sp-twinkle { 0%, 100% { opacity: 0; transform: scale(.4); } 50% { opacity: 1; transform: scale(1.2); } }
 @media (prefers-reduced-motion: reduce) { .sp-card *, .sp-card::after, .sp-cele * { animation: none !important; } }
+
+/* порядок упражнений */
+.row.ord { margin-top: 8px; }
+.ord-row { display: flex; gap: 8px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.ord-row .grow { flex: 1; min-width: 0; font-size: 15px; }
+.ord-row .ic:disabled { opacity: .3; }
+/* журнал */
+.log-list { font: 12px/1.45 ui-monospace, Consolas, monospace; white-space: pre-wrap; word-break: break-word; }
+.log-list div { padding: 4px 0; border-bottom: 1px solid var(--line); }
+.log-list .error { color: var(--danger); }
+.log-list .warn { color: var(--accent); }
+.log-list .act, .log-list .nav { color: var(--muted); }
