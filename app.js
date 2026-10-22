@@ -463,6 +463,7 @@ function pgWorkouts() {
   const hello = now.getHours() < 5 ? 'Доброй ночи' : now.getHours() < 12 ? 'Доброе утро' : now.getHours() < 18 ? 'Добрый день' : 'Добрый вечер';
   return `<header class="top"><div class="grow"><h1 data-a="egg">${hello}</h1>
     <div class="muted small">${now.toLocaleDateString('ru-RU', { weekday: 'long', day: 'numeric', month: 'long' }).replace(/^./, c => c.toUpperCase())}</div></div></header>
+  ${typeof webCards === 'function' ? webCards() : ''}
   ${act ? `<a class="card link active big" href="#/workout/${act.id}"><div class="muted small">Идёт тренировка</div><b>${esc(act.name)}</b>
       <div class="muted small">Прошло <span data-elapsed="${act.start}">${fmtDur(Date.now() - act.start)}</span></div>
       <div class="btn primary block" style="margin:12px 0 0">Продолжить</div></a>`
@@ -1104,7 +1105,7 @@ function pgMore() {
   <h2>Напоминания о тренировке</h2>
   <section class="card">${(() => {
     const c = remindCfg(), native = window.Android && Android.setReminders, p = activeProgram(), planned = p && p.week && Object.values(p.week).some(v => v != null);
-    return `${native ? '' : `<div class="hint" style="margin:0 0 8px">Уведомления приходят в приложении для Android версии 1.9 и новее. Здесь можно посмотреть, как они выглядят.</div>`}
+    return `${native ? '' : `<div class="hint" style="margin:0 0 8px">${typeof IS_IOS !== 'undefined' && IS_IOS ? 'На iPhone веб-приложение не может присылать уведомления по расписанию — они работают только в приложении для Android. Здесь можно посмотреть, как они выглядят.' : 'Уведомления приходят в приложении для Android версии 1.9 и новее. Здесь можно посмотреть, как они выглядят.'}</div>`}
     <label class="switch"><span>Напоминать в дни тренировок</span><input type="checkbox" data-in="setting" data-k="remOn" ${c.on ? 'checked' : ''}></label>
     <label class="switch"><span>Во сколько тренировка</span><input type="time" class="inp" style="width:auto" data-in="setting" data-k="trainTime" value="${c.time}"></label>
     <label class="switch"><span>Когда напомнить</span><select data-in="setting" data-k="remLead">${REMIND_LEADS.map(([v, l]) => opt(v, l, c.lead)).join('')}</select></label>
@@ -2451,7 +2452,7 @@ const actions = {
   /* данные */
   anCopy() { copyText(aiReport()).then(ok => toast(ok ? 'Отчёт скопирован — вставьте его в чат с ИИ' : 'Не удалось скопировать — сохраните отчёт файлом')); },
   anSave() { download(`gymlog-otchet-${isoDay(Date.now())}.txt`, aiReport(), 'text/plain'); },
-  exportJson() { download(`gymlog-${isoDay(Date.now())}.json`, JSON.stringify(db), 'application/json'); },
+  exportJson() { db.settings.lastBackup = Date.now(); delete db.settings.backupSnooze; save(); download(`gymlog-${isoDay(Date.now())}.json`, JSON.stringify(db), 'application/json'); render(); },
   importJson() { $('#imp').click(); },
   exportCsv() {
     const rows = [['Дата', 'Тренировка', 'Упражнение', 'Подход', 'Вес/км', 'Повторы/сек/мин']];

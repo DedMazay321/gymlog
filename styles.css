@@ -572,3 +572,4 @@ div.li { cursor: default; }
 .log-list .error { color: var(--danger); }
 .log-list .warn { color: var(--accent); }
 .log-list .act, .log-list .nav { color: var(--muted); }
+.ios-share { display: inline-block; padding: 0 4px; border: 1px solid var(--line); border-radius: 5px; }

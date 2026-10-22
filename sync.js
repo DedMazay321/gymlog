@@ -280,7 +280,7 @@ function pgSync() {
   }
   if (!syncNative()) return head + `<section class="card"><div class="small">${window.Android
     ? 'Синхронизация появилась в приложении для Android версии 1.24. Установите новый GymLog.apk поверх старого — данные сохранятся.'
-    : 'Синхронизация работает между приложением для Android и GymLog.exe на компьютере.'}</div></section>`;
+    : 'Синхронизация работает между приложением для Android и GymLog.exe на компьютере.' + (typeof IS_IOS !== 'undefined' && IS_IOS ? ' На iPhone данные переносятся файлом: «Ещё» → «Сохранить резервную копию», затем «Восстановить из копии» на другом устройстве.' : '')}</div></section>`;
   if (c.host) return head + `<section class="card"><b>💻 ${esc(c.name || 'Компьютер')}</b><div class="muted small">${esc(c.host)}:${c.port}</div>
       <div class="switch" style="margin-top:8px"><span>Последняя отправка</span><b>${agoFull(c.lastOut)}</b></div>
       ${c.lastErr ? `<div class="hint">Последняя попытка не удалась: ${esc(c.lastErr)}</div>` : ''}

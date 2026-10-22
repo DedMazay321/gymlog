@@ -1,14 +1,15 @@
 {
- "version": 31,
- "name": "1.30",
- "notes": "Перестановка упражнений во время тренировки (Сделать сейчас / Занято — позже / порядок), журнал для разработчика",
+ "version": 32,
+ "name": "1.31",
+ "notes": "Веб-версия для iPhone: значок, подсказка по установке на экран Домой, напоминание о резервной копии",
  "files": {
   "advice.js": "4b9a3e53da55c75bc98db96066a0ce24ae33c32fbd11685e54fbd09d9887f397",
   "analysis.js": "15522b6e2891834bbcdddf512eab01932118527c90d83e3a565391e002c2159f",
-  "app.js": "6feee9ec5e55d696ff3916c42b2ba29e236b323671fd9caf184d0842462d8e67",
+  "app.js": "05aaf03984c9f3bdec98b1be3e008a45115be47b3f47531b172b0f313539d4c8",
   "body.js": "f36e17c0e3042e0d83ed19f3af9db9c38b938948168864ae30cd29f0e849ee91",
   "exercises.js": "5378eb5d0e6a0e11f7a6dd9d5d1bab2383d647205e2b12c393fffb58f92068bb",
   "guide.js": "aa96bfa9227f102dd5e90d81bedbfc6aa87291fdf680f17eb25731fe80d20058",
+  "icons/icon-180.png": "f343452b9491bf7e0e6ecddf26b701572746bb53604bc08132ebc2bed9112d4d",
   "icons/icon-192.png": "fcd36f043b1ff35b61e33747e6b21380e7607a1eb8baa957fa1018264d6a8b70",
   "icons/icon-512.png": "fc1fc021b05f4b5c162a7c84bcfd903b9336c93ec9a6f6ff9050b3673bbfec65",
   "img/e0_0.jpg": "44ba81b3ea124f625c555ae812b37263f82ae460749bbc9ebbeb55a6309f6663",
@@ -668,7 +669,7 @@
   "img/s8_1.jpg": "bebe29fab84e28573cbc3bc47af34c6d0f6cdce8f26e942c87bde08352e05f71",
   "img/s9_0.jpg": "29ae8af3f71c422b5bf0491404bd80c33fd57aa0efe6f559e7ff3f51f6f5038b",
   "img/s9_1.jpg": "d54074a718c16ef774b8725877d3a0b09f92a16a573a2a3eac5490f9ef14a946",
-  "index.html": "397fdf7cfa5fa77b81ed07161e0a62a1733dc0af5a8621aedd8a94c2cb3b014c",
+  "index.html": "f7555ddee7fa560a7f16d149c9b52e0cb20a407b3e34c406dd092cf16c335bec",
   "log.js": "99722c5abcee8d3b28f6f4a8e6962815caf8adb57bc5cb68261ebbbc13527f2f",
   "logview.js": "5cae705e6015d16794b13369ace934933f7a46234d75b833d9bb3a864a25a7d0",
   "manifest.json": "94842a0eaf89b834d9943206744fba3df196f42d84693cd9b17c2d14095c52e0",
@@ -676,10 +677,11 @@
   "programs.js": "610426d324c03b9769156fa3e36c59c3bc741ae5cc61e2058f2196a8877aeefd",
   "special.js": "fe07446570842c87daf9320e3917a19f04c0daf08350ffb478a98956926beec8",
   "stretch.js": "ef1fa9057c00f5dcc3c0dcd116e20c0435c796ce7357a5bf5b84450a03169e36",
-  "styles.css": "4500291ee00e651123abb49b781b24a3bb9969766c8704547efc1d44c3e093da",
+  "styles.css": "e1f4ed4c20d7a1bb7117deef97e56dd90aae809edb50f67d92cc9b4c0b202553",
   "sw.js": "55ea225a9c6f5a5541c222872bda93f70fd72886921db6b0d6cb01a12919a8a8",
-  "sync.js": "0da1e0cbde26f06ab914819fa3793985660a3f15b9f1232ab6ccc3662c7dc875",
+  "sync.js": "07c5a5e83eac296db8e4680815128fe33d64c6fe54351a3cee731b4f820f49ff",
   "tech.js": "04f0a36a7e1193fe6b9c56cbeae4e104619d2c667c0d153530240876a60d75de",
-  "tonnage.js": "6e2e7a6614a4b87c73018583b4018a54981977f55cd05a2dbfd83c6cb7c03ef1"
+  "tonnage.js": "6e2e7a6614a4b87c73018583b4018a54981977f55cd05a2dbfd83c6cb7c03ef1",
+  "web.js": "ba42901bc83d766074ef7e7b3db935bfbe5ec20026928bced4a48008233d1f1e"
  }
 }
