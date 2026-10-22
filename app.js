@@ -128,6 +128,11 @@ function progStep(ex) {
   if (ex.equip === 'Гиря') return { step: big ? 4 : 2, extra: 0, why: '' };
   return { step: big ? (s.stepBig || 5) : (s.stepSmall || 2.5), extra: s.stepSmall || 2.5, why: big ? ' — для крупных мышц шаг больше' : '' };
 }
+// Что умеет текущая версия: уведомления по расписанию — только приложение для Android,
+// вибрация — Android (в Safari на iPhone её нет), синхронизация — Android и ПК.
+const canNotify = () => !!(window.Android && Android.setReminders);
+const canVibrate = () => !!(window.Android && Android.setReminders) || ('vibrate' in navigator && !(window.chrome && window.chrome.webview) && !/iPad|iPhone|iPod/.test(navigator.userAgent));
+const canSync = () => !!window.Android;
 const FEEL = { 1: ['легко', '😌'], 2: ['нормально', '🙂'], 3: ['тяжело', '😤'] };
 // Разминочные подходы перед рабочим весом: со штангой — от пустого грифа, с гантелями и в тренажёрах — 50% и 75%.
 // Веса округляются до доступного шага; подходы легче грифа, слишком близкие к рабочему и повторы весов отбрасываются.
@@ -1070,7 +1075,7 @@ function photosHtml() {
     ${photos.length ? `<h2>Все фото</h2><div class="pgrid">${[...photos].reverse().map(p => `<button data-a="photoView" data-id="${p.id}">
       <img src="${photoUrls[p.id]}" alt="" loading="lazy"><span>${fmtDate(p.date)}${p.pose ? ' · ' + poseName(p.pose).toLowerCase() : ''}</span></button>`).join('')}</div>`
       : `<div class="empty">Снимайте себя раз в 2–4 недели в одной позе и при одном освещении — изменения, незаметные в зеркале, будут видны на фото.</div>`}
-    <p class="muted small">Фото хранятся на этом устройстве (и на ПК, если включена синхронизация) и в резервную копию не входят.</p>`;
+    <p class="muted small">Фото хранятся на этом устройстве${canSync() ? " (и на ПК, если включена синхронизация)" : ""} и в резервную копию не входят.</p>`;
 }
 function pgMeasures(sub) {
   if (sub === 'photo') { mType = 'photo'; history.replaceState(null, '', '#/measures'); }
@@ -1109,7 +1114,7 @@ function pgMore() {
     <label class="switch"><span>Отдых между подходами</span><select data-in="setting" data-k="rest">
       ${[0, 30, 45, 60, 90, 120, 150, 180, 240, 300].map(v => opt(v, v ? fmtDur(v * 1000) : 'Выключен', s.rest)).join('')}</select></label>
     <label class="switch"><span>Звук по окончании отдыха</span><input type="checkbox" data-in="setting" data-k="sound" ${s.sound ? 'checked' : ''}></label>
-    <label class="switch"><span>Вибрация</span><input type="checkbox" data-in="setting" data-k="vibro" ${s.vibro ? 'checked' : ''}></label>
+    ${canVibrate() ? `<label class="switch"><span>Вибрация</span><input type="checkbox" data-in="setting" data-k="vibro" ${s.vibro ? 'checked' : ''}></label>` : ''}
     <label class="switch"><span>Прибавка: грудь, спина, ноги</span><select data-in="setting" data-k="stepBig">${[2.5, 5, 10].map(v => opt(v, n(v) + ' кг', s.stepBig || 5)).join('')}</select></label>
     <label class="switch"><span>Прибавка: руки, плечи, пресс</span><select data-in="setting" data-k="stepSmall">${[1, 1.25, 2.5, 5].map(v => opt(v, n(v) + ' кг', s.stepSmall || 2.5)).join('')}</select></label>
     <label class="switch"><span>Предлагать разминочные подходы</span><input type="checkbox" data-in="setting" data-k="warmup" ${s.warmup !== false ? 'checked' : ''}></label>
@@ -1117,7 +1122,7 @@ function pgMore() {
     <label class="switch"><span>Тема</span><select data-in="setting" data-k="theme">
       ${opt('dark', 'Тёмная', s.theme)}${opt('light', 'Светлая', s.theme)}${opt('auto', 'Как в системе', s.theme)}</select></label>
   </section>
-  <h2>Напоминания о тренировке</h2>
+  ${!canNotify() ? '' : `<h2>Напоминания о тренировке</h2>
   <section class="card">${(() => {
     const c = remindCfg(), native = window.Android && Android.setReminders, p = activeProgram(), planned = p && p.week && Object.values(p.week).some(v => v != null);
     return `${native ? '' : `<div class="hint" style="margin:0 0 8px">${typeof IS_IOS !== 'undefined' && IS_IOS ? 'На iPhone веб-приложение не может присылать уведомления по расписанию — они работают только в приложении для Android. Здесь можно посмотреть, как они выглядят.' : 'Уведомления приходят в приложении для Android версии 1.9 и новее. Здесь можно посмотреть, как они выглядят.'}</div>`}
@@ -1130,7 +1135,7 @@ function pgMore() {
       ${native ? `<button class="btn" data-a="remTest">Прислать сейчас</button>` : ''}</div>
     <div class="muted small" style="margin-top:10px">${planned ? 'Напоминания приходят в дни, назначенные в расписании текущей программы. Если в этот день тренировка уже была, уведомление не придёт.'
       : 'Чтобы напоминания приходили, назначьте тренировки на дни недели: «Программы» → программа → «Расписание».'}</div>`;
-  })()}</section>
+  })()}</section>`}
   <h2>Обновление</h2>
   <section class="card">
     <div class="switch" data-a="egg"><span>Версия приложения</span><b>${esc(ver.name || "—")}</b></div>
@@ -1142,13 +1147,13 @@ function pgMore() {
   <h2>Данные</h2>
   <section class="card">
     <a class="li" href="#/log"><span>🧾 Журнал для разработчика</span><span class="muted">${glog.all().some(e => e.l === 'error') ? '<span class="down">есть ошибки</span> ' : ''}›</span></a>
-    <a class="li" href="#/sync"><span>${IS_PC ? '📲 Синхронизация с телефоном' : '💻 Синхронизация с ПК'}</span><span class="muted">›</span></a>
+    ${canSync() ? `<a class="li" href="#/sync"><span>${IS_PC ? '📲 Синхронизация с телефоном' : '💻 Синхронизация с ПК'}</span><span class="muted">›</span></a>` : ''}
     <button class="li" data-a="exportJson"><span>Сохранить резервную копию</span><span class="muted small">.json</span></button>
     <button class="li" data-a="importJson"><span>Восстановить из копии</span><span class="muted small">.json</span></button>
     <button class="li" data-a="exportCsv"><span>Выгрузить тренировки в таблицу</span><span class="muted small">.csv</span></button>
     <button class="li" data-a="wipe" style="color:var(--danger)"><span>Удалить все данные</span></button>
   </section>
-  <p class="muted small">Все данные хранятся только на этом устройстве (и на вашем ПК, если включена синхронизация). Делайте резервную копию, чтобы не потерять их при очистке браузера или смене телефона.</p>
+  <p class="muted small">Все данные хранятся только на этом устройстве${canSync() ? ' (и на вашем ПК, если включена синхронизация)' : ''}. Делайте резервную копию, чтобы не потерять их при очистке браузера или смене телефона.</p>
   <p class="muted small">Фотографии и данные о мышцах — открытая база free-exercise-db (общественное достояние); схема тела — react-native-body-highlighter (MIT).</p>
   <p class="muted small">GymLog · ${db.workouts.length} тренировок · ${db.exercises.filter(e => !e.archived).length} упражнений</p>`;
 }
@@ -1612,7 +1617,7 @@ function pgSupps(id) {
     const sec = (title, text) => `<h2>${title}</h2><section class="card">${text}</section>`;
     return `<header class="top"><a class="ic" href="#/supps">‹</a><h1>${s.name}</h1></header>
     <div class="sup-top"><span>${s.icon}</span>${proofBadge(s.proof)}</div>
-    <section class="card">${suppRemsHtml(s.id)}</section>
+    ${canNotify() ? `<section class="card">${suppRemsHtml(s.id)}</section>` : ''}
     ${sec('Что это', s.what)}${sec('Для чего', s.why)}${sec('Кому имеет смысл', s.who)}${sec('Как принимать', s.how)}
     ${s.id === 'protein' ? `<div class="hint" style="margin-bottom:10px">Ваша норма — около ${nutrition().protein} г белка в день.
       Как набрать её обычной едой — в разделе <a href="#/meals"><u>«Примеры рациона»</u></a>.</div>` : ''}
@@ -1623,7 +1628,7 @@ function pgSupps(id) {
   <section class="card"><b>С чего начать</b>
     <div class="small" style="margin-top:6px">Результат дают тренировки, еда и сон. Добавки помогают совсем немного и только когда основа уже налажена.
     Большинству достаточно обычной еды; из всего списка по-настоящему доказаны протеин (если не хватает белка), креатин и кофеин.</div></section>
-  <h2>Напоминания о приёме</h2><section class="card">${suppRemsHtml()}</section>
+  ${canNotify() ? `<h2>Напоминания о приёме</h2><section class="card">${suppRemsHtml()}</section>` : ''}
   <h2>Справочник</h2>
   <div class="chips"><button class="chip ${supF ? '' : 'on'}" data-a="supF" data-v="0">Все</button>
     ${[3, 2, 1].map(p => `<button class="chip ${supF === p ? 'on' : ''}" data-a="supF" data-v="${p}">${PROOF[p][0]}</button>`).join('')}</div>
