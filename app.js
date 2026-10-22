@@ -514,7 +514,7 @@ function pgProgress() {
 function itemCard(w, it, i) {
   const ex = exById(it.exId), k = KINDS[ex.kind] || KINDS.wr, prev = prevSets(it.exId, w.id, w.start);
   const d = `data-w="${w.id}" data-x="${i}"`;
-  const sg = w.end ? null : w.deload ? deloadHint(it, prev) : suggest(it, prev), best = ex.kind === 'wr' ? bestBefore(ex.id, w.start) : 0;
+  const sg = w.end ? null : w.deload ? deloadHint(it, prev) : suggestCtx(w, i, it, prev), best = ex.kind === 'wr' ? bestBefore(ex.id, w.start) : 0;
   const linked = i > 0 && w.items[i - 1].ss;   // продолжение суперсета
   // прошлые подходы сопоставляем по типу: разминочные — с разминочными, рабочие — с рабочими
   const prevWork = prev.filter(x => x.t !== 'w'), prevWarm = prev.filter(x => x.t === 'w');
@@ -524,12 +524,13 @@ function itemCard(w, it, i) {
   const wu = !w.end && db.settings.warmup !== false && !it.sets.some(x => x.t === 'w' || x.done) && !w.items.slice(0, i).some(x => exById(x.exId).muscle === ex.muscle) ? warmupPlan(ex, workW) : [];
   // оценку «как дался подход» спрашиваем только у последнего выполненного, чтобы карточка не разрасталась
   const lastDone = it.sets.reduce((a, s, j) => s.done ? j : a, -1);
-  let num = 0;
+  let num = 0, nextW = null;
   return `<section class="card ${it.ss ? 'ss-top' : ''} ${linked ? 'ss-bottom' : ''}">
     ${it.ss && !linked ? `<div class="ss-tag">Суперсет — упражнения подряд, отдых после последнего</div>` : ''}
     <div class="ex-head">${thumb(ex.id, true)}<a href="#/exercise/${ex.id}">${esc(ex.name)}</a><button class="ic sm" data-a="itMenu" ${d}>⋮</button></div>
     <div class="muted small">${prev.length ? 'Прошлый раз: ' + prev.map(s => setTxt(s, ex.kind)).join(' · ') : 'Раньше не выполнялось'}</div>
     ${sg ? `<div class="hint">${sg.text}</div>` : ''}
+    ${fillBtns(w, it, i, d)}
     ${wu.length ? `<button class="hint wu" data-a="warmAdd" ${d}>🔥 Разминка: ${wu.map(x => `${n(x.w)}×${x.r}`).join(' · ')} <b>— добавить</b></button>` : ''}
     ${it.note ? `<div class="small" style="margin-top:4px">📝 ${esc(it.note)}</div>` : ''}
     ${it.sets.length ? `<div class="set-row head"><span>#</span><span>${k.a}</span><span>${k.b}</span><span></span></div>` : ''}
@@ -541,6 +542,7 @@ function itemCard(w, it, i) {
       const earlier = it.sets.slice(0, j).reverse().find(x => x.w != null && x.t !== 'w') || {};
       const pw = up && sg.dw && p.w != null ? p.w + sg.dw : p.w ?? earlier.w;
       const pr = up && sg.dr && p.r != null ? p.r + sg.dr : (up && sg.dw && it.planR) || p.r;
+      if (nextW == null && !s.done) nextW = s.w ?? pw ?? null;   // вес ближайшего подхода — для калькулятора блинов
       // поле с кнопками − и +: вес и повторы меняются без клавиатуры
       const field = (f, val, ph) => `<div class="stp"><button data-a="stepVal" data-f="${f}" data-v="-1" ${d} data-s="${j}" aria-label="Меньше">−</button>
         <input type="text" inputmode="decimal" data-in="setVal" data-f="${f}" ${d} data-s="${j}" value="${val ?? ''}" placeholder="${ph ?? ''}">
@@ -557,6 +559,7 @@ function itemCard(w, it, i) {
         ${rate ? `<div class="feel"><span class="muted">Как дался подход?</span>${[1, 2, 3].map(v =>
           `<button class="${s.f === v ? 'on f' + v : ''}" data-a="setFeel" ${d} data-s="${j}" data-v="${v}">${FEEL[v][0]}</button>`).join('')}</div>` : ''}</div>`;
     }).join('')}
+    ${w.end ? '' : plateLine(ex, nextW, d)}
     ${(() => {
       if (w.end || linked) return '';
       const blocks = wBlocks(w.items), bi = blocks.findIndex(b => b[0] === it), b = blocks[bi];
@@ -1928,8 +1931,9 @@ const actions = {
   },
   async wMenu(d) {
     const w = W(d.w);
-    const v = await menu(w.name, [w.items.length > 1 ? ['order', 'Порядок упражнений'] : null, ['rename', 'Переименовать'], ['note', 'Заметка к тренировке'], ['date', 'Изменить дату'],
+    const v = await menu(w.name, [!w.end ? ['fill', 'Заполнить всё как в прошлый раз'] : null, !w.end ? ['fillUp', 'Заполнить всё с прибавкой'] : null, w.items.length > 1 ? ['order', 'Порядок упражнений'] : null, ['rename', 'Переименовать'], ['note', 'Заметка к тренировке'], ['date', 'Изменить дату'],
       w.end && !activeW() ? ['resume', 'Продолжить тренировку'] : null, ['del', 'Удалить тренировку', 1]]);
+    if (v === 'fill' || v === 'fillUp') return actions.fillAll({ w: d.w, v: v === 'fillUp' ? 'up' : '' });
     if (v === 'order') return actions.wOrder(d);
     if (v === 'rename') return actions.wRename(d);
     if (v === 'note') {

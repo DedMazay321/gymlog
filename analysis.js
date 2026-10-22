@@ -39,8 +39,8 @@ function prevComparable(w) {
 /* ---------- разбор одной тренировки ---------- */
 function workoutReport(w) {
   const prev = prevComparable(w), st = wStats(w), ps = prev && wStats(prev);
-  const rows = [], good = [], bad = [], next = [];
-  w.items.forEach(it => {
+  const rows = [], good = [], bad = [], next = [], ctx = [];
+  w.items.forEach((it, ii) => {
     const ex = exById(it.exId), work = it.sets.filter(isWork);
     if (ex.kind !== 'wr' || !work.length || rows.some(r => r.ex.id === ex.id)) return;
     const before = prevSets(ex.id, w.id, w.start).filter(s => s.t !== 'w');
@@ -56,12 +56,18 @@ function workoutReport(w) {
     const d = !pTop ? null : rm || pRm ? pct(rm, pRm) : pct(reps, pReps);
     const plan = it.planR ? work.filter(s => !s.t && (s.r || 0) >= it.planR).length + '/' + work.filter(s => !s.t).length : '';
     const hard = work.some(s => s.f === 3), easy = work.every(s => s.f === 1);
-    rows.push({ ex, top, rm, vol, d, rec, recRm, plan, hard, easy });
+    // сколько работы на те же мышцы было перед упражнением сегодня и в прошлый раз
+    const pc = pTop ? preCompare(w, ii, false) : null, tired = pc && pc.diff >= PRE_GAP, fresh = pc && pc.diff <= -PRE_GAP;
+    rows.push({ ex, top, rm, vol, d, rec, recRm, plan, hard, easy, pre: pc ? pc.today.sets : 0, tired });
+    const preTxt = pc ? `перед ним было ${n(pc.today.sets)} подх. на те же мышцы (${preNames(pc.today.by) || '—'}), в прошлый раз — ${n(pc.last.sets)}` : '';
+    if (tired && d != null && d <= -1) ctx.push(`↔ ${ex.name}: ${fmtPct(d)}, но сегодня ${preTxt}. С учётом порядка это не спад: мышцы пришли к нему уставшими.`);
+    else if (tired && d != null && d > -1) ctx.push(`💪 ${ex.name}: ${d >= 1 ? fmtPct(d) : 'на уровне прошлого'}, хотя сегодня ${preTxt}. С учётом порядка это хороший прогресс.`);
+    else if (fresh && d != null && d >= 2) ctx.push(`ℹ️ ${ex.name}: ${fmtPct(d)}, но сегодня оно шло на более свежие мышцы (${n(pc.today.sets)} подх. перед ним против ${n(pc.last.sets)}). Часть прибавки — заслуга порядка.`);
     if (rec) good.push(`🏆 ${ex.name}: рекорд веса — ${n(top.w)} кг`);
     else if (recRm) good.push(`🏆 ${ex.name}: лучший расчётный 1ПМ — ${n(+rm.toFixed(1))} кг`);
     else if (d != null && d >= 2) good.push(`▲ ${ex.name}: ${fmtPct(d)} к прошлому разу`);
-    if (d != null && d <= -5) bad.push(`▼ ${ex.name}: ${fmtPct(d)} к прошлому разу${hard ? ', и подходы дались тяжело' : ''}`);
-    const sg = suggest({ ...it, exId: ex.id }, work);
+    if (d != null && d <= -5 && !tired) bad.push(`▼ ${ex.name}: ${fmtPct(d)} к прошлому разу${hard ? ', и подходы дались тяжело' : ''}`);
+    const sg = suggest({ ...it, exId: ex.id }, work);   // следующий раз: подсказка от сегодняшних подходов
     if (sg) next.push(`${ex.name}: ${sg.text.replace(/^Сегодня(:| —)?\s*/, '').replace(/^./, c => c.toUpperCase())}`);
   });
   // реальный отдых между подходами — по времени отметки подходов (записывается с версии 1.23)
@@ -78,7 +84,7 @@ function workoutReport(w) {
   }
   const sl = db.sleep && db.sleep[isoDay(w.start)] || db.sleep && db.sleep[isoDay(w.start - DAY)];
   if (bad.length && sl && sl < 6.5) bad.push(`😴 Сон перед тренировкой — ${n(sl)} ч: недосып заметно снижает силовые`);
-  return { prev, st, ps, rows, good, bad, next, rest };
+  return { prev, st, ps, rows, good, bad, next, rest, ctx };
 }
 const fmtSec = s => { s = Math.round(s); return s >= 60 ? `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}` : s + ' с'; };
 
@@ -97,13 +103,15 @@ function workoutReportHtml(w) {
     </div>
     ${done.length ? `<div class="small" style="margin-bottom:6px"><b>Прогресс в ${up} из ${done.length}</b> упражнений по сравнению с прошлым разом.</div>` : ''}
     ${r.rows.length ? `<div class="an-table">${r.rows.map(x => `<div class="an-row">
-      <span class="grow">${esc(x.ex.name)}${x.plan ? ` <span class="muted small">· план ${x.plan}</span>` : ''}</span>
+      <span class="grow">${esc(x.ex.name)}${x.plan ? ` <span class="muted small">· план ${x.plan}</span>` : ''}${x.pre ? ` <span class="muted small" title="Подходов на те же мышцы перед упражнением">· после ${n(x.pre)} подх.</span>` : ''}</span>
       <span class="muted small">${setTxt(x.top, 'wr')}</span>
       <span class="an-d">${x.rec || x.recRm ? '<span class="up">🏆</span>' : x.d == null ? '<span class="muted">новое</span>' : x.d >= 1 ? `<span class="up">▲ ${fmtPct(x.d)}</span>` : x.d <= -1 ? `<span class="down">▼ ${fmtPct(x.d)}</span>` : '<span class="muted">=</span>'}</span></div>`).join('')}</div>
       <div class="muted small" style="margin-top:6px">Процент — изменение расчётного 1ПМ лучшего подхода (без веса — суммы повторов).</div>` : ''}
     ${r.rest ? `<div class="small" style="margin-top:8px">⏱ Средний отдых: ${fmtSec(r.rest.avg)} (план ${fmtSec(r.rest.plan)})</div>` : ''}
   </section>
   ${miniFor(w).length ? `<section class="card"><b>Мини-достижения</b>${miniHtml(miniFor(w))}</section>` : ''}
+  ${r.ctx.length ? `<section class="card"><b>С учётом порядка упражнений</b>${r.ctx.map(t => `<div class="small an-li">${esc(t)}</div>`).join('')}
+    <div class="muted small" style="margin-top:6px">Изолирующее упражнение после базового идёт на уставших мышцах, поэтому его сравнивают с учётом того, сколько работы на те же мышцы было перед ним.</div></section>` : ''}
   ${r.good.length ? `<section class="card"><b>Что получилось</b>${r.good.map(t => `<div class="small an-li">${esc(t)}</div>`).join('')}</section>` : ''}
   ${r.bad.length ? `<section class="card"><b>На что обратить внимание</b>${r.bad.map(t => `<div class="small an-li">${esc(t)}</div>`).join('')}
     ${r.bad.some(t => t.startsWith('▼')) ? `<div class="muted small" style="margin-top:6px">Разовый спад — это нормально: сон, питание, стресс. Если он повторяется 2–3 тренировки подряд — смотрите «Анализ и советы».</div>` : ''}</section>` : ''}
@@ -124,8 +132,15 @@ function liftTrends() {
     const lastSets = last.sets, tail = ser.slice(-2);
     const easy = tail.length === 2 && tail.every(p => p.sets.every(s => s.f === 1));
     const hard = tail.length === 2 && tail.every(p => p.sets.some(s => s.f === 3));
+    // предутомление в каждой тренировке с этим упражнением
+    const preOf = p => preLoad(p.w, p.w.items.findIndex(i => i.exId === id), false).sets;
+    const preBest = preOf(ser[prIdx]), preTail = tail.reduce((a, p) => a + preOf(p), 0) / tail.length;
+    const orderHit = preTail - preBest >= PRE_GAP;   // сейчас упражнение делается на более уставших мышцах, чем в день рекорда
     let status = 'up', tip = '';
-    if (val(last) < best * 0.93 && tail.every(p => val(p) < best * 0.95)) {
+    if (val(last) < best * 0.93 && tail.every(p => val(p) < best * 0.95) && orderHit) {
+      status = 'flat';
+      tip = `Ниже рекорда, но рекорд был, когда перед упражнением было меньше работы на те же мышцы (${n(preBest)} подх. против ${n(+preTail.toFixed(1))} сейчас). С учётом порядка спада нет — сравнивайте с тренировками того же порядка.`;
+    } else if (val(last) < best * 0.93 && tail.every(p => val(p) < best * 0.95)) {
       status = 'down';
       tip = 'Результат ниже лучшего две тренировки подряд. Проверьте сон и питание; если всё в порядке — сделайте лёгкую неделю.';
     } else if (since >= 3 && daysAgo(bestAt) >= 21) {
@@ -134,7 +149,8 @@ function liftTrends() {
       tip = [`Без улучшения уже ${since} трен. (${Math.round(daysAgo(bestAt) / 7)} нед.).`,
         weighted ? 'Варианты: снизьте вес на 10% и за 2–3 недели вернитесь к рекорду; смените диапазон повторов (например, с 8–10 на 5–6 или 12–15)'
           : 'Варианты: добавьте отягощение или усложните вариант упражнения; смените темп — медленное опускание за 3 секунды',
-        alt ? `или замените на ${/^«/.test(alt.name) ? alt.name : `«${alt.name}»`} на 4–6 недель.` : '.'].join(' ').replace(' .', '.');
+        alt ? `или замените на ${/^«/.test(alt.name) ? alt.name : `«${alt.name}»`} на 4–6 недель.` : '.'].join(' ').replace(' .', '.')
+        + (orderHit ? ` Учтите: сейчас перед ним больше работы на те же мышцы, чем в день рекорда (${n(+preTail.toFixed(1))} подх. против ${n(preBest)}) — если поставить его раньше в тренировке, вес, скорее всего, пойдёт вверх.` : '');
     } else if (easy) {
       status = 'ready'; tip = 'Две тренировки подряд все подходы даются легко — смело прибавляйте вес.';
     } else if (hard && change <= 0) {
