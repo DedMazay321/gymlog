@@ -5,7 +5,14 @@ const SPECIAL = [
     what: 'Жим штанги лёжа — 100 кг', about: 'Главный рубеж любителя: сотку от груди жмёт далеко не каждый, кто ходит в зал.' },
   { id: 'squat150', rank: 'gold', icon: '🦵', title: 'Полторашка в приседе', kg: 150, ex: ['e20', 'e195'],
     what: 'Приседания со штангой — 150 кг', about: 'Полтора центнера на плечах — ноги и спина уровня атлета.' },
+  { id: 'hip100', rank: 'diamond', icon: '🍑', title: 'Сотка в хип-трасте', kg: 100, ex: ['e107', 'e30'], sex: 'f',
+    what: 'Хип-траст или ягодичный мост со штангой — 100 кг', about: 'Сто килограммов на бёдрах — ягодицы, которые работают по-настоящему. Этого рубежа достигают немногие.' },
+  { id: 'pullup1', rank: 'gold', icon: '🧗‍♀️', title: 'Первое подтягивание', kg: 0, ex: ['e10', 'e91'], sex: 'f',
+    what: 'Подтянуться самой, без резинки и гравитрона', about: 'Одно из самых трудных упражнений для женщин — и одно из самых приятных достижений.' },
 ];
+// мужские рубежи — для мужского профиля, женские — для женского; без указанного пола видны все
+SPECIAL.forEach(a => { if (!a.sex) a.sex = 'm'; });
+const mySpecial = () => SPECIAL.filter(a => !mySex() || a.sex === mySex());
 const RANK_NAME = { diamond: 'Бриллиантовое достижение', gold: 'Золотое достижение' };
 
 // Лучший вес и момент, когда рубеж взят впервые.
@@ -23,7 +30,7 @@ function specialState(a) {
 // Новые главные достижения после тренировки; silent — только запомнить (первый запуск этой версии).
 function checkSpecial(silent) {
   const got = db.special || (db.special = {}), news = [];
-  SPECIAL.forEach(a => { if (!got[a.id] && specialState(a).got) { got[a.id] = Date.now(); news.push(a); } });
+  mySpecial().forEach(a => { if (!got[a.id] && specialState(a).got) { got[a.id] = Date.now(); news.push(a); } });
   if (news.length) save();
   return silent ? [] : news;
 }
@@ -38,10 +45,10 @@ function specialCard(a) {
       <div class="small">${a.what}</div>
       ${st.got ? `<div class="small sp-note">Получено ${fmtDate(st.at)} · <a href="#/workout/${st.wid}">та самая тренировка</a></div>`
         : `<div class="bar"><i style="width:${Math.min(100, Math.round(st.best / a.kg * 100))}%"></i></div>
-           <div class="muted small">${st.best ? `Лучший результат — ${n(st.best)} кг, осталось ${n(left)} кг` : 'Пока не выполнялось'}</div>`}
+           <div class="muted small">${a.kg ? (st.best ? `Лучший результат — ${n(st.best)} кг, осталось ${n(left)} кг` : 'Пока не выполнялось') : 'Отметьте подход подтягиваний хотя бы на 1 повтор'}</div>`}
     </div></section>`;
 }
-const specialHtml = () => `<h2>Главные достижения</h2>${SPECIAL.map(specialCard).join('')}`;
+const specialHtml = () => `<h2>Главные достижения</h2>${mySpecial().map(specialCard).join('')}`;
 
 // Праздник: большое окно с анимацией, вибрацией и звуком.
 function celebrate(a, live) {
@@ -60,7 +67,7 @@ function celebrate(a, live) {
 }
 // Во время тренировки — сразу после отметки подхода.
 function specialLiveCheck(w, it, s) {
-  const a = SPECIAL.find(x => x.ex.includes(it.exId));
+  const a = mySpecial().find(x => x.ex.includes(it.exId));
   if (!a || !isWork(s) || (s.r || 0) < 1 || (s.w || 0) < a.kg) return;
   // празднуем, только если рубеж не брался ни в прошлых тренировках, ни раньше в этой
   if (specialState(a).got) return;
@@ -70,5 +77,6 @@ function specialLiveCheck(w, it, s) {
   setTimeout(() => celebrate(a, true), 150);
 }
 
-// при первом запуске этой версии уже взятые рубежи запоминаем молча
-if (!db.special) checkSpecial(true);
+// при запуске рубежи, взятые раньше (в том числе до появления достижения в приложении), запоминаем молча;
+// празднование — в момент отметки подхода или при завершении тренировки
+checkSpecial(true);

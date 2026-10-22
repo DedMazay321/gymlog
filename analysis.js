@@ -66,7 +66,9 @@ function workoutReport(w) {
     if (rec) good.push(`🏆 ${ex.name}: рекорд веса — ${n(top.w)} кг`);
     else if (recRm) good.push(`🏆 ${ex.name}: лучший расчётный 1ПМ — ${n(+rm.toFixed(1))} кг`);
     else if (d != null && d >= 2) good.push(`▲ ${ex.name}: ${fmtPct(d)} к прошлому разу`);
-    if (d != null && d <= -5 && !tired) bad.push(`▼ ${ex.name}: ${fmtPct(d)} к прошлому разу${hard ? ', и подходы дались тяжело' : ''}`);
+    const cyc = cycleLow(w.start);
+    if (cyc && !tired && d != null && d <= -1) ctx.push(`🌙 ${ex.name}: ${fmtPct(d)} — тренировка пришлась на ${cyc.name}. В эти дни сил обычно меньше, это не регресс.`);
+    if (d != null && d <= -5 && !tired && !cyc) bad.push(`▼ ${ex.name}: ${fmtPct(d)} к прошлому разу${hard ? ', и подходы дались тяжело' : ''}`);
     const sg = suggest({ ...it, exId: ex.id }, work);   // следующий раз: подсказка от сегодняшних подходов
     if (sg) next.push(`${ex.name}: ${sg.text.replace(/^Сегодня(:| —)?\s*/, '').replace(/^./, c => c.toUpperCase())}`);
   });
@@ -110,7 +112,7 @@ function workoutReportHtml(w) {
     ${r.rest ? `<div class="small" style="margin-top:8px">⏱ Средний отдых: ${fmtSec(r.rest.avg)} (план ${fmtSec(r.rest.plan)})</div>` : ''}
   </section>
   ${miniFor(w).length ? `<section class="card"><b>Мини-достижения</b>${miniHtml(miniFor(w))}</section>` : ''}
-  ${r.ctx.length ? `<section class="card"><b>С учётом порядка упражнений</b>${r.ctx.map(t => `<div class="small an-li">${esc(t)}</div>`).join('')}
+  ${r.ctx.length ? `<section class="card"><b>${r.ctx.some(t => t.startsWith('🌙')) ? 'Пояснения к результатам' : 'С учётом порядка упражнений'}</b>${r.ctx.map(t => `<div class="small an-li">${esc(t)}</div>`).join('')}
     <div class="muted small" style="margin-top:6px">Изолирующее упражнение после базового идёт на уставших мышцах, поэтому его сравнивают с учётом того, сколько работы на те же мышцы было перед ним.</div></section>` : ''}
   ${r.good.length ? `<section class="card"><b>Что получилось</b>${r.good.map(t => `<div class="small an-li">${esc(t)}</div>`).join('')}</section>` : ''}
   ${r.bad.length ? `<section class="card"><b>На что обратить внимание</b>${r.bad.map(t => `<div class="small an-li">${esc(t)}</div>`).join('')}
@@ -140,6 +142,9 @@ function liftTrends() {
     if (val(last) < best * 0.93 && tail.every(p => val(p) < best * 0.95) && orderHit) {
       status = 'flat';
       tip = `Ниже рекорда, но рекорд был, когда перед упражнением было меньше работы на те же мышцы (${n(preBest)} подх. против ${n(+preTail.toFixed(1))} сейчас). С учётом порядка спада нет — сравнивайте с тренировками того же порядка.`;
+    } else if (val(last) < best * 0.93 && tail.every(p => val(p) < best * 0.95) && tail.every(p => cycleLow(p.t))) {
+      status = 'flat';
+      tip = 'Ниже рекорда, но последние тренировки пришлись на дни перед менструацией и её начало — в это время сил обычно меньше. Это не регресс: через неделю результат вернётся.';
     } else if (val(last) < best * 0.93 && tail.every(p => val(p) < best * 0.95)) {
       status = 'down';
       tip = 'Результат ниже лучшего две тренировки подряд. Проверьте сон и питание; если всё в порядке — сделайте лёгкую неделю.';
@@ -215,13 +220,18 @@ function adviceList() {
   // вес тела и цель
   const wts = db.measures.filter(m => m.type === 'weight' && m.date >= now - 35 * DAY).sort((a, b) => a.date - b.date);
   if (wts.length >= 2 && wts[wts.length - 1].date - wts[0].date >= 14 * DAY) {
-    const a = wts[0], b = wts[wts.length - 1], rate = (b.value - a.value) / ((b.date - a.date) / (7 * DAY)), goal = profile().goal;
+    // по средним за 7 дней: разовые скачки воды не влияют на вывод
+    const a = wts[0], b = wts[wts.length - 1], goal = profile().goal, aAvg = weightAvg(a.date + 6 * DAY), bAvg = weightAvg(b.date), span = (b.date - a.date - 6 * DAY) / (7 * DAY);
+    const rate = aAvg != null && bAvg != null && span >= 1 ? (bAvg - aAvg) / span : (b.value - a.value) / ((b.date - a.date) / (7 * DAY));
     const r = `${rate > 0 ? '+' : rate < 0 ? '−' : ''}${n(Math.abs(+rate.toFixed(2)))} кг в неделю`;
     if (goal === 'gain' && rate < 0.1) out.push(['info', 'Вес тела', `Вес почти не меняется (${r}), а цель — набор. Добавьте 200–300 ккал в день.`]);
     else if (goal === 'gain' && rate > 0.5) out.push(['info', 'Вес тела', `Вес растёт быстро (${r}) — вероятно, в основном за счёт жира. Уберите 150–200 ккал.`]);
     else if (goal === 'loss' && rate > -0.2) out.push(['info', 'Вес тела', `Вес почти не снижается (${r}). Проверьте калории — нужен дефицит 300–500 ккал.`]);
     else if (goal === 'loss' && rate < -b.value * 0.01) out.push(['warn', 'Вес тела', `Вес уходит слишком быстро (${r}) — так теряются и мышцы. Оптимально 0,5–1% веса в неделю.`]);
     else out.push(['ok', 'Вес тела', `Изменение веса — ${r}, это соответствует вашей цели.`, { warn: false }]);
+    // фигура меняется и без весов: талия за 4 недели
+    const waist = db.measures.filter(m => m.type === 'waist' && m.date >= now - 35 * DAY).sort((x, y) => x.date - y.date);
+    if (Math.abs(rate) < 0.15 && waist.length >= 2 && waist[waist.length - 1].value - waist[0].value <= -1) out.push(['ok', 'Фигура меняется', `Вес почти стоит, а талия −${n(+(waist[0].value - waist[waist.length - 1].value).toFixed(1))} см — уходит жир и растут мышцы. Весы этого не показывают.`]);
   }
   return out;
 }
@@ -241,6 +251,7 @@ function pgAnalysis() {
   ${undoCard()}${deloadCard()}
   ${adv.map(([k, t, x, ctx]) => `<section class="card an-adv ${k}"><b>${AN_IC[k]} ${t}</b><div class="small">${esc(x)}</div>${actBtns(adviceActions(t, ctx || {}))}</section>`).join('')
     || `<section class="card"><div class="small">Явных проблем не видно — продолжайте в том же духе.</div></section>`}
+  ${gluteCard()}
   <h2>Подходов в неделю на мышцы</h2>
   <section class="card">${AN_GROUPS.map(([k, , lo, hi]) => {
     const x = v[k] / weeks, w = Math.min(100, x / (hi + 5) * 100), cls = x < lo * 0.6 ? 'lo' : x > hi + 5 ? 'hi' : 'ok';

@@ -14,7 +14,7 @@ const isWr = it => exById(it.exId).kind === 'wr';
 function tonEvents() {
   const byW = {}, all = [];
   let bestW = 0, bestSet = 0, total = 0, bestWeek = 0, bestMonth = 0, curWeek = null, curMonth = null, weekSum = 0, monthSum = 0, weekFlag = false, monthFlag = false;
-  const bestEx = {}, bestSetEx = {};
+  const bestEx = {}, bestSetEx = {}, bestG = {}, female = isFemale();
   [...finished()].sort((a, b) => a.start - b.start).forEach(w => {
     const list = [], push = (icon, text, kind) => list.push({ icon, text, kind });
     const t = wStats(w).ton;
@@ -52,7 +52,12 @@ function tonEvents() {
     const before = total;
     total += t;
     TON_MILESTONES.forEach(m => { if (before < m * 1000 && total >= m * 1000) push('⚖️', `Всего поднято ${n(m)} т`, 'total'); });
-    const ORDER = ['workout', 'week', 'month', 'total', 'topset', 'set', 'exvol'];
+    if (female) w.items.filter(it => isGlute(it.exId) && isWr(it)).forEach(it => {
+      const top = Math.max(0, ...it.sets.filter(isWork).map(s => s.w || 0));
+      if (bestG[it.exId] && top > bestG[it.exId] && !list.some(x => x.kind === 'glute' && x.ex === it.exId)) list.push({ icon: '🍑', text: `Ягодицы: рекорд в «${exById(it.exId).name}» — ${n(top)} кг (было ${n(bestG[it.exId])})`, kind: 'glute', ex: it.exId });
+      bestG[it.exId] = Math.max(bestG[it.exId] || 0, top);
+    });
+    const ORDER = ['workout', 'glute', 'week', 'month', 'total', 'topset', 'set', 'exvol'];
     list.sort((a, b) => ORDER.indexOf(a.kind) - ORDER.indexOf(b.kind));
     if (list.length) { byW[w.id] = list; all.push(list.map(e => ({ ...e, w }))); }
   });

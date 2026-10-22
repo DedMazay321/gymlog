@@ -43,6 +43,9 @@ const PRE_GAP = 2;   // разница от двух подходов уже з�
 
 // Подсказка веса с учётом порядка: после большей нагрузки на те же мышцы прибавку не предлагаем.
 function suggestCtx(w, i, it, prev) {
+  return w.end ? suggestOrder(w, i, it, prev) : cycleAdjust(suggestOrder(w, i, it, prev), Date.now());
+}
+function suggestOrder(w, i, it, prev) {
   const base = suggest(it, prev);
   if (!base || w.end) return base;
   const c = preCompare(w, i, true);

@@ -519,9 +519,9 @@ function pgProgress() {
   ${hub('#/tonnage', '🏋️', 'Тоннаж', `Неделя: ${tonsShort(tonPeriod('week', 0))} · месяц: ${tonsShort(tonPeriod('month', 0))} · рекорды и мини-достижения`)}
   ${hub('#/analysis', '🧠', 'Анализ и советы', 'Что растёт, что застряло, перекосы в нагрузке и что делать дальше')}
   ${hub('#/stats', '📊', 'Сводка и графики', 'Тоннаж, сила, нагрузка по мышцам по неделям и месяцам')}
-  ${hub('#/awards', '🏆', 'Достижения', `Получено уровней: ${got} из ${all} · ${SPECIAL.map(a => { const st = specialState(a); return a.icon + ' ' + (st.got ? 'взято' : `осталось ${n(Math.max(0, a.kg - st.best))} кг`); }).join(' · ')}`)}
+  ${hub('#/awards', '🏆', 'Достижения', `Получено уровней: ${got} из ${all} · ${mySpecial().map(a => { const st = specialState(a); return a.icon + ' ' + (st.got ? 'взято' : `осталось ${n(Math.max(0, a.kg - st.best))} кг`); }).join(' · ')}`)}
   ${hub('#/history', '🗓️', 'История тренировок', total ? `Всего тренировок: ${total} · календарь и список` : 'Здесь появятся ваши тренировки')}
-  ${hub('#/measures', '📏', 'Замеры тела', weight ? `Вес: ${n(weight.value)} кг · обхваты и графики` : 'Вес, обхваты и графики изменений')}
+  ${hub('#/measures', '📏', 'Замеры тела', weight ? `Вес: ${weightAvg(Date.now()) != null ? `в среднем ${n(+weightAvg(Date.now()).toFixed(1))} кг за неделю` : n(weight.value) + ' кг'}${whr(Date.now()) ? ` · талия/бёдра ${n(+whr(Date.now()).v.toFixed(2))}` : ''}` : 'Вес, обхваты и графики изменений')}
   ${hub('#/measures/photo', '📷', 'Фото прогресса', db.photoCount ? `Снимков: ${db.photoCount} · сравнение и анализ изменений` : 'Сравнение «было и стало» и анализ изменений')}`;
 }
 
@@ -612,13 +612,14 @@ function pgPrograms() {
     <div class="muted small">${p.days.length} дн.${p.days.length ? ' · ' + p.days.map(d => esc(d.name)).join(', ') : ''}</div></a>`).join('')
     || `<div class="empty">Программ пока нет.<br>Создайте свою или возьмите готовую.</div>`}
   <a class="btn block primary" href="#/pick">🎯 Подобрать программу под себя</a>
-  <a class="btn block" href="#/catalog">📚 Каталог программ · ${CATALOG.length}</a>
+  <a class="btn block" href="#/catalog">📚 Каталог программ · ${CATALOG.filter(c => !mySex() || c[1] === 'a' || c[1] === mySex()).length}</a>
   <div class="row two"><button class="btn" data-a="wizOpen">Конструктор</button><button class="btn" data-a="pAdd">+ С нуля</button></div>
   <p class="muted small">«Подобрать» — несколько вопросов и готовые варианты. «Каталог» — все программы с фильтрами. «Конструктор» собирает программу по параметрам, «С нуля» — пустая программа для своих упражнений.</p>`;
 }
 // Подбор программы: пол, цель, число дней, уровень — и предпросмотр того, что получится.
 const wiz = { sex: 'm', goal: 'mass', place: 'gym', days: 3, split: 'auto', level: 'new' };
 function wizHtml(onb) {
+  if (mySex()) wiz.sex = mySex();
   figSex = wiz.sex;
   try { return wizBody(onb); } finally { figSex = null; }
 }
@@ -628,7 +629,7 @@ function wizBody(onb) {
     WIZ[key].map(([v, l]) => `<button class="chip ${wiz[key] === v ? 'on' : ''}" data-a="wizSet" data-k="${key}" data-v="${v}"
       ${key === 'split' && !splitOk(v, wiz.days, wiz.place) ? 'disabled' : ''}>${l}</button>`).join('')}</div>`;
   return `${onb ? '' : '<h3>Подбор программы</h3>'}
-    ${group('sex', 'Для кого')}${group('goal', 'Цель')}${group('place', 'Где тренируетесь')}${group('days', 'Тренировок в неделю')}
+    ${mySex() ? '' : group('sex', 'Для кого')}${group('goal', 'Цель')}${group('place', 'Где тренируетесь')}${group('days', 'Тренировок в неделю')}
     ${group('split', 'Схема тренировок')}
     <div class="muted small" style="margin:-4px 2px 10px">${wiz.split === 'auto' ? 'Авто — схема подбирается под число дней.'
       : 'Фулбоди доступен до 4 дней в неделю, «жим / тяга / ноги» — от 3 дней и только в зале.'}</div>
@@ -737,9 +738,11 @@ function catTags(c) {
 }
 const tagsHtml = c => `<div class="tags">${catTags(c).map(t => `<span>${t}</span>`).join('')}</div>`;
 function catListHtml() {
-  const list = CATALOG.filter(c => (!cf.sex || c[1] === 'a' || c[1] === cf.sex) && (!cf.goal || c[4] === cf.goal) && (!cf.place || c[2] === cf.place)
+  const sx = mySex() || cf.sex;
+  const list = CATALOG.filter(c => (!sx || c[1] === 'a' || c[1] === sx) && (!cf.goal || c[4] === cf.goal) && (!cf.place || c[2] === cf.place)
     && (!cf.level || c[3] === cf.level) && (!cf.days || c[6].length === +cf.days));
-  return `<div class="muted small" style="margin:0 2px 8px">Найдено программ: ${list.length} из ${CATALOG.length}</div>` +
+  const total = CATALOG.filter(c => !mySex() || c[1] === 'a' || c[1] === mySex()).length;
+  return `<div class="muted small" style="margin:0 2px 8px">Найдено программ: ${list.length} из ${total}</div>` +
     (list.map(c => `<a class="card link" href="#/catalog/${CATALOG.indexOf(c)}"><b>${esc(c[0])}</b>${tagsHtml(c)}
       <div class="muted small">${esc(c[7].split('. ')[0].replace(/\.$/, ''))}.</div></a>`).join('')
       || `<div class="empty">Под такие условия программ нет.<br>Уберите один из фильтров.</div>`);
@@ -773,7 +776,7 @@ function pgCatalog(id) {
     `<option value="${v}" ${String(cf[k]) === String(v) ? 'selected' : ''}>${l}</option>`).join('')}</select>`;
   const named = o => Object.entries(o).map(([v, l]) => [v, cap(l)]);
   return `<header class="top"><a class="ic" href="#/programs">‹</a><h1>Каталог программ</h1></header>
-  <div class="filters">${sel('sex', 'Для кого: все', [['f', 'Для женщин'], ['m', 'Для мужчин']])}${sel('goal', 'Цель: любая', named(GOAL_NAMES))}
+  <div class="filters">${mySex() ? '' : sel('sex', 'Для кого: все', [['f', 'Для женщин'], ['m', 'Для мужчин']])}${sel('goal', 'Цель: любая', named(GOAL_NAMES))}
     ${sel('place', 'Место: любое', named(PLACE_NAMES))}${sel('level', 'Уровень: любой', named(LEVEL_NAMES))}
     ${sel('days', 'Дней в неделю: сколько угодно', [2, 3, 4, 5, 6].map(d => [d, d + ' дн. в неделю']))}</div>
   <div id="catbox">${catListHtml()}</div>`;
@@ -849,7 +852,7 @@ function obResult() {
     ${top.map((m, i) => card(m, genFirst ? i + 1 : i, m === accent ? 'С вашим акцентом' : i === 0 && !genFirst ? 'Лучшее совпадение' : '')).join('')}
     ${extra ? card(extra, 9, 'В дополнение: пресс') : ''}
     ${genFirst ? '' : genCard}
-    <a class="btn block ghost" href="#/catalog">Посмотреть весь каталог (${CATALOG.length})</a>`;
+    <a class="btn block ghost" href="#/catalog">Посмотреть весь каталог (${CATALOG.filter(c => !mySex() || c[1] === 'a' || c[1] === mySex()).length})</a>`;
 }
 const obProfile = () => ({ sex: ob.sex, age: ob.age, height: ob.height, weight: ob.weight,
   goal: ob.goal === 'loss' ? 'loss' : ob.goal === 'mass' ? 'gain' : 'keep', act: ob.days <= 2 ? 1.375 : ob.days <= 4 ? 1.55 : 1.725 });
@@ -921,13 +924,14 @@ const exSex = ex => { const m = /^e(\d+)$/.exec(ex.id); return (m && exSexMap()[
 const exSexLabel = ex => ({ f: 'чаще в женских программах', m: 'чаще в мужских программах' })[exSex(ex)] || '';
 function exBox(f) {
   const q = f.q.toLowerCase();
-  if (f.s == null) f.s = db.profile ? profile().sex : '';
+  const me = mySex();
+  if (f.s == null || (me && f.s && f.s !== me)) f.s = me || '';
   // при поиске по названию раздел не учитывается: ищем по всему справочнику
   const all = db.exercises.filter(e => !e.archived && (!f.m || e.muscle === f.m) && (!q || e.name.toLowerCase().includes(q)));
   const list = all.filter(e => q || !f.s || exSex(e) === 'a' || exSex(e) === f.s)
     .sort((a, b) => MUSCLES.indexOf(a.muscle) - MUSCLES.indexOf(b.muscle) || a.name.localeCompare(b.name, 'ru'));
   let last = null;
-  return `<div class="seg">${[['', 'Все'], ['f', 'Для женщин'], ['m', 'Для мужчин']].map(([v, l]) =>
+  return `<div class="seg">${(me ? [[me, me === 'f' ? 'Для женщин' : 'Для мужчин'], ['', 'Все']] : [['', 'Все'], ['f', 'Для женщин'], ['m', 'Для мужчин']]).map(([v, l]) =>
     `<button class="${f.s === v ? 'on' : ''}" data-a="exSexSet" data-v="${v}">${l}</button>`).join('')}</div>
   <div class="muted small" style="margin:0 2px 10px">${q ? 'Поиск идёт по всему справочнику.' : f.s ? `Упражнения из ${f.s === 'f' ? 'женских' : 'мужских'} программ и общие для всех: ${list.length} из ${all.length}. Остальные — во вкладке «Все».`
     : `Весь справочник: ${all.length} упражнений.`}</div>
@@ -1089,6 +1093,7 @@ function pgMeasures(sub) {
   ${chips}
   <section class="card">${chart('ms', list.map(m => ({ t: m.date, v: m.value })), unit)}
     ${diff != null ? `<div class="muted small" style="margin-top:6px">Изменение за всё время: ${diff > 0 ? '+' : ''}${n(diff)} ${unit}</div>` : ''}</section>
+  ${mType === 'weight' ? weightAvgCard() : mType === 'waist' || mType === 'hips' ? whrCard() : ''}
   <button class="btn block primary" data-a="mAdd">+ Добавить замер: ${name.toLowerCase()}</button>
   ${list.length ? `<h2>Записи</h2><section class="card">${[...list].reverse().map(m => `<button class="li" data-a="mDel" data-id="${m.id}">
     <span>${fmtDate(m.date)}</span><b>${n(m.value)} ${unit}</b></button>`).join('')}</section>` : ''}`;
@@ -1324,7 +1329,8 @@ const AWARDS = [
   { id: 'ton', g: 'power', icon: '⚖️', title: 'Поднятый вес', what: 'тонн', tiers: [1, 10, 50, 100, 250, 500, 1000] },
   { id: 'dayton', g: 'power', icon: '🚚', title: 'Тяжёлый день', what: 'тонн за одну тренировку', tiers: [2, 4, 6, 8, 12, 16] },
   { id: 'prs', g: 'power', icon: '🏆', title: 'Личные рекорды', what: 'рекордов веса', tiers: [1, 5, 15, 30, 60, 100] },
-  { id: 'bench', g: 'power', icon: '💪', title: 'Жим лёжа', what: 'кг в подходе', tiers: [40, 60, 80, 100, 120, 140], ex: 'e0' },
+  { id: 'bench', g: 'power', icon: '💪', title: 'Жим лёжа', what: 'кг в подходе', tiers: [40, 60, 80, 100, 120, 140], ex: 'e0', sex: 'm' },
+  { id: 'hip', g: 'power', icon: '🍑', title: 'Хип-траст', what: 'кг в подходе', tiers: [30, 50, 70, 90, 110, 130], ex: 'e107', sex: 'f' },
   { id: 'squat', g: 'power', icon: '🦵', title: 'Приседания со штангой', what: 'кг в подходе', tiers: [50, 80, 100, 120, 150, 180], ex: 'e20' },
   { id: 'pull', g: 'power', icon: '🧗', title: 'Подтягивания', what: 'повторов в подходе', tiers: [1, 5, 10, 15, 20], ex: 'e10', reps: true },
   { id: 'push', g: 'power', icon: '🤸', title: 'Отжимания', what: 'повторов в подходе', tiers: [10, 20, 30, 40, 50], ex: 'e8', reps: true },
@@ -1390,7 +1396,7 @@ function awardValues() {
 }
 function awardList() {
   const v = awardValues();
-  return AWARDS.map(a => ({ ...a, value: v[a.id] || 0, level: a.tiers.filter(t => (v[a.id] || 0) >= t).length }));
+  return AWARDS.filter(a => !a.sex || !mySex() || a.sex === mySex()).map(a => ({ ...a, value: v[a.id] || 0, level: a.tiers.filter(t => (v[a.id] || 0) >= t).length }));
 }
 // Запоминает достигнутые уровни и возвращает те, что выросли с прошлой проверки.
 function checkAwards(silent) {
@@ -1483,6 +1489,8 @@ function syncReminders() {
 
 /* ---------- питание, вода и сон ---------- */
 const ACTIVITY = [[1.2, 'Сидячая работа, без тренировок'], [1.375, '1–3 тренировки в неделю'], [1.55, '3–5 тренировок в неделю'], [1.725, '6–7 тренировок в неделю'], [1.9, 'Тяжёлый физический труд']];
+// Пол, указанный в профиле (анкета или «Питание»): по нему скрывается то, что предназначено другому полу.
+const mySex = () => db.profile && (db.profile.sex === 'f' || db.profile.sex === 'm') ? db.profile.sex : null;
 function profile() {
   const lastW = db.measures.filter(m => m.type === 'weight').sort((a, b) => b.date - a.date)[0];
   return { sex: 'm', age: 30, height: 175, weight: lastW ? lastW.value : 75, act: 1.55, goal: 'keep', ...(db.profile || {}) };
