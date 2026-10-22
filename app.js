@@ -2557,7 +2557,11 @@ $('#photoInp').addEventListener('change', async e => {
 if (!db.awards || AWARDS.some(a => !(a.id in db.awards))) checkAwards(true);
 syncReminders();
 if (navigator.storage && navigator.storage.persist) navigator.storage.persist();
-if (!NATIVE && 'serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js');
+if (!NATIVE && 'serviceWorker' in navigator && location.protocol.startsWith('http')) {
+  navigator.serviceWorker.register('sw.js').catch(e => glog.add('warn', 'Офлайн-режим не включился: ' + e.message));
+  // фото упражнений для работы без интернета докачиваются в фоне, когда приложение уже открылось
+  navigator.serviceWorker.ready.then(r => setTimeout(() => r.active && r.active.postMessage('prefetch'), 4000));
+}
 
 // первая отрисовка — когда загружены и модули после app.js (анализ, синхронизация, фото, советы)
 document.addEventListener('DOMContentLoaded', () => { render(); drawRest(); });
