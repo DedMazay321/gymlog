@@ -113,10 +113,20 @@ function suggest(it, prev) {
     if (hard) return { text: `Сегодня снова ${target} повт. — в прошлый раз было тяжело, закрепите результат` };
     return { dr: easy ? 2 : 1, text: `Сегодня попробуйте ${target + (easy ? 2 : 1)} повт. — в прошлый раз план выполнен${easy ? ' легко' : ''}` };
   }
-  const base = ex.equip === 'Гантели' || ex.equip === 'Гиря' ? 1 : 2.5, step = easy ? base * 2 : base;
+  const st = progStep(ex), step = easy ? st.step + st.extra : st.step;
   if (!ok) return { text: `Сегодня: ${n(top)} кг — сначала доберите ${target} повт. во всех подходах` };
   if (hard) return { text: `Сегодня: ${n(top)} кг — план выполнен, но было тяжело: закрепите этот вес` };
-  return { dw: step, text: `Сегодня: ${n(top + step)} кг — в прошлый раз план выполнен${easy ? ' легко' : ''}, прибавьте ${n(step)} кг` };
+  return { dw: step, text: `Сегодня: ${n(top + step)} кг — в прошлый раз план выполнен${easy ? ' легко' : ''}, прибавьте ${n(step)} кг${st.why}` };
+}
+// Шаг прибавки: крупные мышцы (грудь, спина, ноги) сильнее и прогрессируют быстрее — 5 кг,
+// мелкие (бицепс, трицепс, плечи, предплечья, пресс) — 2,5 кг. С гантелями вес считается на одну гантель,
+// поэтому шаг меньше; гири бывают через 2–4 кг. Если подход дался легко — добавляется ещё один малый шаг.
+const BIG_GROUPS = ['Грудь', 'Спина', 'Ноги'];
+function progStep(ex) {
+  const big = BIG_GROUPS.includes(ex.muscle), s = db.settings;
+  if (ex.equip === 'Гантели') return { step: big ? (s.stepDbBig || 2) : (s.stepDbSmall || 1), extra: 1, why: big ? ' (на каждую гантель)' : '' };
+  if (ex.equip === 'Гиря') return { step: big ? 4 : 2, extra: 0, why: '' };
+  return { step: big ? (s.stepBig || 5) : (s.stepSmall || 2.5), extra: s.stepSmall || 2.5, why: big ? ' — для крупных мышц шаг больше' : '' };
 }
 const FEEL = { 1: ['легко', '😌'], 2: ['нормально', '🙂'], 3: ['тяжело', '😤'] };
 // Разминочные подходы перед рабочим весом: со штангой — от пустого грифа, с гантелями и в тренажёрах — 50% и 75%.
@@ -1100,6 +1110,8 @@ function pgMore() {
       ${[0, 30, 45, 60, 90, 120, 150, 180, 240, 300].map(v => opt(v, v ? fmtDur(v * 1000) : 'Выключен', s.rest)).join('')}</select></label>
     <label class="switch"><span>Звук по окончании отдыха</span><input type="checkbox" data-in="setting" data-k="sound" ${s.sound ? 'checked' : ''}></label>
     <label class="switch"><span>Вибрация</span><input type="checkbox" data-in="setting" data-k="vibro" ${s.vibro ? 'checked' : ''}></label>
+    <label class="switch"><span>Прибавка: грудь, спина, ноги</span><select data-in="setting" data-k="stepBig">${[2.5, 5, 10].map(v => opt(v, n(v) + ' кг', s.stepBig || 5)).join('')}</select></label>
+    <label class="switch"><span>Прибавка: руки, плечи, пресс</span><select data-in="setting" data-k="stepSmall">${[1, 1.25, 2.5, 5].map(v => opt(v, n(v) + ' кг', s.stepSmall || 2.5)).join('')}</select></label>
     <label class="switch"><span>Предлагать разминочные подходы</span><input type="checkbox" data-in="setting" data-k="warmup" ${s.warmup !== false ? 'checked' : ''}></label>
     <label class="switch"><span>Не гасить экран во время тренировки</span><input type="checkbox" data-in="setting" data-k="keepOn" ${s.keepOn !== false ? 'checked' : ''}></label>
     <label class="switch"><span>Тема</span><select data-in="setting" data-k="theme">
@@ -2509,7 +2521,7 @@ const inputs = {
     $(picker ? '#pexbox' : '#exbox').innerHTML = exBox(f);
   },
   setting(d, el) {
-    db.settings[d.k] = el.type === 'checkbox' ? el.checked : d.k === 'rest' || d.k === 'remLead' ? +el.value : el.value;
+    db.settings[d.k] = el.type === 'checkbox' ? el.checked : ['rest', 'remLead', 'stepBig', 'stepSmall'].includes(d.k) ? +el.value : el.value;
     if (d.k === 'remLead' || d.k === 'remStyle') actions.remNext({ keep: 1 });
     save(); document.documentElement.dataset.theme = db.settings.theme; syncWake(); syncReminders();
   },
