@@ -608,8 +608,9 @@ function pgWorkout(id) {
 /* ---------- экран: программы ---------- */
 function pgPrograms() {
   return `<header class="top"><h1>Программы</h1></header>
-  ${db.programs.map(p => `<a class="card link" href="#/program/${p.id}"><b>${esc(p.name)}</b>
-    <div class="muted small">${p.days.length} дн.${p.days.length ? ' · ' + p.days.map(d => esc(d.name)).join(', ') : ''}</div></a>`).join('')
+  ${db.programs.map(p => { const r = progProgress(p), [c] = catOf(p); return `<a class="card link pcard ${c ? 'g-' + c[4] : ''}" href="#/program/${p.id}"><div class="ex-head"><b>${c ? GOAL_ICON[c[4]] + ' ' : ''}${esc(p.name)}</b>${db.activeProgram === p.id ? '<span class="match hi">текущая</span>' : ''}</div>
+    <div class="muted small">${p.days.length} дн.${p.days.length ? ' · ' + p.days.map(d => esc(d.name.replace(/^День \d+ · /, ''))).join(', ') : ''}</div>
+    ${r ? `<div class="small" style="margin-top:4px">${r.weeks} нед. · ${r.ws.length} трен. · ${AN_IC[r.verdict[0]]} ${r.verdict[1].toLowerCase()}</div>` : ''}${p.review ? `<div class="small">${'★'.repeat(p.review.stars)}</div>` : ''}</a>`; }).join('')
     || `<div class="empty">Программ пока нет.<br>Создайте свою или возьмите готовую.</div>`}
   <a class="btn block primary" href="#/pick">🎯 Подобрать программу под себя</a>
   <a class="btn block" href="#/catalog">📚 Каталог программ · ${CATALOG.filter(c => !mySex() || c[1] === 'a' || c[1] === mySex()).length}</a>
@@ -672,6 +673,7 @@ function pgProgram(id, day) {
   return `<header class="top"><a class="ic" href="#/programs">‹</a><h1 data-a="pRename" data-p="${p.id}">${esc(p.name)}</h1>
     <button class="ic" data-a="pMenu" data-p="${p.id}">⋮</button></header>
   ${p.note ? `<div class="note">${esc(p.note)}</div>` : ''}
+  ${p.days.length ? progProgressHtml(p) : ''}
   ${p.days.length ? `${tip('program', 'Назначьте тренировки на дни недели — ближайшая появится на главном экране. Нажмите «Подробнее» у дня, чтобы изменить упражнения.')}<h2>Расписание</h2><section class="card">
     <div class="week">${WD.map((name, i) => { const di = (p.week || {})[i], on = di != null && p.days[di];
       return `<button class="${on ? 'on' : ''}" data-a="weekSet" data-p="${p.id}" data-wd="${i}"><span>${name}</span><b>${on ? 'Д' + (di + 1) : '—'}</b></button>`; }).join('')}</div>
@@ -697,9 +699,7 @@ function pgProgram(id, day) {
   </section>`;
   }).join('') || `<div class="empty">Добавьте тренировочные дни</div>`}
   <button class="btn block" data-a="dAdd" data-p="${p.id}">+ Тренировочный день</button>
-  ${loads.length ? `<h2>Нагрузка за неделю, подходов</h2><section class="card">${loads.map(([m, v]) =>
-    `<div class="bar-row"><span>${MUSCLE_RU[m]}</span><div class="bar"><i style="width:${Math.round(v / top * 100)}%"></i></div><b>${v}</b></div>`).join('')}
-    <div class="muted small" style="margin-top:8px">Считаются подходы упражнений, где мышца — основная.</div></section>` : ''}`;
+  ${loads.length ? `<h2>Паспорт программы</h2>${(() => { const [c] = catOf(p); return passportHtml(progPassport(p, c ? c[5] : 'all', c ? c[4] : 'mass')); })()}` : ''}`;
 }
 // Подробный просмотр одного дня программы: какие мышцы работают и что именно делать.
 function pgDay(p, di) {
@@ -784,6 +784,7 @@ function pgCatalog(id) {
 // Добавляет программу к своим: расписание по умолчанию, а если текущей программы нет — делает её текущей.
 function adoptProgram(p) {
   p.id = uid();
+  p.created = Date.now();
   p.days.forEach(d => d.id = uid());
   const spread = { 2: [0, 3], 3: [0, 2, 4], 4: [0, 1, 3, 4], 5: [0, 1, 2, 3, 4], 6: [0, 1, 2, 3, 4, 5] }[p.days.length] || [];
   p.week = Object.fromEntries(spread.map((wd, i) => [wd, i]));
@@ -855,7 +856,8 @@ function obResult() {
     <a class="btn block ghost" href="#/catalog">Посмотреть весь каталог (${CATALOG.filter(c => !mySex() || c[1] === 'a' || c[1] === mySex()).length})</a>`;
 }
 const obProfile = () => ({ sex: ob.sex, age: ob.age, height: ob.height, weight: ob.weight,
-  goal: ob.goal === 'loss' ? 'loss' : ob.goal === 'mass' ? 'gain' : 'keep', act: ob.days <= 2 ? 1.375 : ob.days <= 4 ? 1.55 : 1.725 });
+  goal: ob.goal === 'loss' ? 'loss' : ob.goal === 'mass' ? 'gain' : 'keep', act: ob.days <= 2 ? 1.375 : ob.days <= 4 ? 1.55 : 1.725,
+  place: ob.place, level: ob.level, days: ob.days });
 function pgPick(first) {
   if (!ob) obInit();
   const step = OB_STEPS[ob.step], n1 = ob.step + 1, total = OB_STEPS.length;
@@ -2142,6 +2144,7 @@ const actions = {
   },
   catAdd(d) {
     const p = adoptProgram(catalogProgram(CATALOG[+d.id]));
+    p.cat = +d.id;
     db.settings.onboarded = true;
     save(); syncReminders(); go('#/program/' + p.id);
     toast('Программа добавлена — расписание можно изменить');
