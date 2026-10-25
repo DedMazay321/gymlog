@@ -732,3 +732,7 @@ h2 .match { vertical-align: middle; margin-left: 6px; text-transform: none; lett
   #exbox > .li:hover { background: var(--card2); }
 }
 @media (min-width: 1400px) { #exbox { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (min-width: 1000px) {
+  /* анкета и подбор программы — аккуратная колонка по центру */
+  #app:has(.ob-head) > *, #app:has(.welcome) > * { width: 100%; max-width: 720px; justify-self: center; }
+}

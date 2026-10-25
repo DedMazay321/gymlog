@@ -1,7 +1,7 @@
 {
- "version": 40,
- "name": "1.39",
- "notes": "Веб-версия: файлы всегда свежие, после обновления страница перезагружается сама",
+ "version": 41,
+ "name": "1.40",
+ "notes": "Компьютерная версия: анкета — колонкой по центру",
  "files": {
   "advice.js": "4b9a3e53da55c75bc98db96066a0ce24ae33c32fbd11685e54fbd09d9887f397",
   "analysis.js": "792e69395d586aaa8cf2599dfa0c1bb9d3816d04a0395142a6fd68532b804dee",
@@ -681,7 +681,7 @@
   "programs.js": "135147c777e49e2b234772bdaf739acf9c3792645b08472879bba093cba1373a",
   "special.js": "39e33f74eb30f6888dcb65961860b6a45fe962ce67e034824a928c38dd970504",
   "stretch.js": "ef1fa9057c00f5dcc3c0dcd116e20c0435c796ce7357a5bf5b84450a03169e36",
-  "styles.css": "fcb0afc3ba7f3f4dc35533c4f8b2567eada3f7d96938b9fe04671956be0c60a7",
+  "styles.css": "228991bfddbbeba93c22f9fb0d5c5e34709a8948d4b126806ac5f4f90f9e2fb9",
   "sw.js": "bdf9ea51aec2872941c9ca852202ff991aa616fa7948af1a0596b5300a90e397",
   "sync.js": "07c5a5e83eac296db8e4680815128fe33d64c6fe54351a3cee731b4f820f49ff",
   "tech.js": "04f0a36a7e1193fe6b9c56cbeae4e104619d2c667c0d153530240876a60d75de",
