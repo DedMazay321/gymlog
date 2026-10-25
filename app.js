@@ -479,6 +479,7 @@ function pgWorkouts() {
   return `<header class="top"><div class="grow"><h1 data-a="egg">${hello}</h1>
     <div class="muted small">${now.toLocaleDateString('ru-RU', { weekday: 'long', day: 'numeric', month: 'long' }).replace(/^./, c => c.toUpperCase())}</div></div></header>
   ${typeof webCards === 'function' ? webCards() : ''}
+  <div class="dash"><div class="dash-l">
   ${act ? `<a class="card link active big" href="#/workout/${act.id}"><div class="muted small">Идёт тренировка</div><b>${esc(act.name)}</b>
       <div class="muted small">Прошло <span data-elapsed="${act.start}">${fmtDur(Date.now() - act.start)}</span></div>
       <div class="btn primary block" style="margin:12px 0 0">Продолжить</div></a>`
@@ -492,11 +493,13 @@ function pgWorkouts() {
   <section class="card">${weekStrip()}
     <div class="muted small" style="margin-top:10px">${(() => { const c = list.filter(w => w.start >= weekStart(Date.now())).length, st = weekStreaks().cur;
       return `Тренировок на этой неделе: ${c}${st > 1 ? ` · серия ${st} нед. подряд 🔥` : ''}`; })()}</div></section>
+  <div class="last">${list.length ? `<h2>Прошлая тренировка</h2>${workoutRow(list[0])}
+    <a class="btn block ghost" href="#/history">Вся история</a>` : tip('home', 'Когда закончите первую тренировку, здесь появятся история, графики прогресса и достижения.')}</div>
+  </div><div class="dash-r">
   <h2>Календарь</h2>
   ${calendar()}
   ${cycleCard()}${waterCard()}
-  ${list.length ? `<h2>Прошлая тренировка</h2>${workoutRow(list[0])}
-    <a class="btn block ghost" href="#/history">Вся история</a>` : tip('home', 'Когда закончите первую тренировку, здесь появятся история, графики прогресса и достижения.')}`;
+  </div></div>`;
 }
 function pgHistory() {
   const list = sortedW().filter(w => w.end);
@@ -1825,6 +1828,7 @@ function render() {
       <section class="card"><div class="small">Этот экран не открылся из-за ошибки в приложении. Ваши данные не пострадали. Ошибка записана в журнал: «Ещё» → «Журнал для разработчика».</div>
       <div class="muted small" style="margin-top:6px">${esc(e.message)}</div></section><a class="btn block" href="#/workouts">На главную</a>`;
   }
+  $('#app').dataset.page = pages[page] ? page : 'workouts';   // по странице компьютерная версия выбирает раскладку колонок
   $('#app').classList.toggle('wide', page === 'analysis' || page === 'photoan' || page === 'tonnage');   // на широком экране (ПК) анализ раскладывается в две колонки
   const tab = tabOf[page] || (pages[page] ? page : 'workouts');
   document.querySelectorAll('#tabs a').forEach(a => a.classList.toggle('on', a.dataset.tab === tab));
