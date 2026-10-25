@@ -44,7 +44,9 @@ self.addEventListener('message', e => {
 self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET') return;
   e.respondWith(
-    fetch(e.request).then(res => {
+    // файлы приложения всегда сверяем с сервером (быстрый запрос «не изменился ли»), иначе браузер мог
+    // подставить из своего кэша старые стили к новым скриптам; фото упражнений не меняются — им хватает обычного кэша
+    fetch(e.request, e.request.url.includes('/img/') ? {} : { cache: 'no-cache' }).then(res => {
       const copy = res.clone();
       caches.open(CACHE).then(c => c.put(e.request, copy));
       return res;

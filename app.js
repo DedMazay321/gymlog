@@ -2594,6 +2594,8 @@ if (!db.awards || AWARDS.some(a => !(a.id in db.awards))) checkAwards(true);
 syncReminders();
 if (navigator.storage && navigator.storage.persist) navigator.storage.persist();
 if (!NATIVE && 'serviceWorker' in navigator && location.protocol.startsWith('http')) {
+  // пришла новая версия офлайн-режима — один раз перезагружаем страницу, чтобы все файлы были одной версии
+  if (navigator.serviceWorker.controller) navigator.serviceWorker.addEventListener('controllerchange', () => { if (!sessionStorage.getItem('swReloaded')) { sessionStorage.setItem('swReloaded', '1'); location.reload(); } });
   navigator.serviceWorker.register('sw.js').catch(e => glog.add('warn', 'Офлайн-режим не включился: ' + e.message));
   // фото упражнений для работы без интернета докачиваются в фоне, когда приложение уже открылось
   navigator.serviceWorker.ready.then(r => setTimeout(() => r.active && r.active.postMessage('prefetch'), 4000));
