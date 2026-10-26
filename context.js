@@ -29,7 +29,8 @@ function preLoad(w, idx, planned) {
 const preNames = by => Object.keys(by).map(id => exById(id).name.toLowerCase()).slice(0, 3).join(', ');
 // Прошлое выполнение упражнения: тренировка и номер упражнения в ней.
 function prevOccurrence(exId, w) {
-  const pw = sortedW().find(x => x.end && x.id !== w.id && x.start < w.start && x.items.some(i => i.exId === exId && i.sets.some(s => s.done)));
+  const has = x => x.end && x.id !== w.id && x.start < w.start && x.items.some(i => i.exId === exId && i.sets.some(s => s.done));
+  const pw = (w.pid && w.di != null && sortedW().find(x => has(x) && x.pid === w.pid && x.di === w.di)) || sortedW().find(has);
   return pw ? { w: pw, idx: pw.items.findIndex(i => i.exId === exId) } : null;
 }
 // Сравнение предутомления сегодня и в прошлый раз (diff > 0 — сегодня мышцы уставшее).

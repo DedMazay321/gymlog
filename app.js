@@ -71,13 +71,34 @@ function setTxt(s, kind) {
   if (kind === 'time') return (s.w ? n(s.w) + ' кг × ' : '') + n(s.r) + ' с';
   return s.w ? `${n(s.w)}×${n(s.r)}` : n(s.r);
 }
-function prevSets(exId, exceptId, before) {
-  for (const w of sortedW()) {
-    if (w.id === exceptId || w.start >= before) continue;
-    const sets = w.items.filter(it => it.exId === exId).flatMap(it => it.sets.filter(s => s.done));
-    if (sets.length) return sets;
-  }
-  return [];
+// Прошлые подходы упражнения. Если тренировка по программе — берём тот же день программы в прошлый раз
+// (обычно неделю назад): одно упражнение может стоять в разных днях с разной схемой, и путать их нельзя.
+// Если в этом дне упражнение ещё не делали — последнее выполнение. В .from — тренировка, откуда взято.
+function prevSets(exId, exceptId, before, ctx) {
+  const take = same => {
+    for (const w of sortedW()) {
+      if (w.id === exceptId || w.start >= before || (same && !(w.pid === ctx.pid && w.di === ctx.di))) continue;
+      const sets = w.items.filter(it => it.exId === exId).flatMap(it => it.sets.filter(s => s.done));
+      if (sets.length) { sets.from = w; sets.sameDay = !!same; return sets; }
+    }
+    return null;
+  };
+  return (ctx && ctx.pid && ctx.di != null && take(true)) || take(false) || [];
+}
+// Подходы при старте упражнения: 1 разминочный (если есть вес) и 4 рабочих — или как в программе.
+function planSets(exId, programSets) {
+  const ex = exById(exId);
+  if (ex.kind !== 'wr' || db.settings.setPlan === 'program') return emptySets(programSets || 1);
+  const sets = emptySets(4);
+  if (ex.equip !== 'Своё тело') sets.unshift({ w: null, r: null, done: false, t: 'w' });
+  return sets;
+}
+// Вес разминочного подхода — около половины рабочего, с округлением до доступного шага.
+function warmWeight(ex, work) {
+  if (!work) return null;
+  const bar = ex.equip === 'Штанга', step = bar ? 2.5 : ex.equip === 'Гантели' ? 1 : ex.equip === 'Гиря' ? 4 : 2.5;
+  const w = Math.round(work * 0.5 / step) * step;
+  return bar ? Math.max(20, Math.min(w, work)) : Math.max(step, w);
 }
 // Типы подходов: без метки — рабочий, w — разминочный, f — до отказа, d — дроп-сет.
 const SET_TYPES = { '': ['Рабочий', ''], w: ['Разминочный', 'Р'], f: ['До отказа', 'О'], d: ['Дроп-сет', 'Д'] };
@@ -530,7 +551,7 @@ function pgProgress() {
 
 /* ---------- экран: тренировка ---------- */
 function itemCard(w, it, i) {
-  const ex = exById(it.exId), k = KINDS[ex.kind] || KINDS.wr, prev = prevSets(it.exId, w.id, w.start);
+  const ex = exById(it.exId), k = KINDS[ex.kind] || KINDS.wr, prev = prevSets(it.exId, w.id, w.start, w);
   const d = `data-w="${w.id}" data-x="${i}"`;
   const sg = w.end ? null : w.deload ? deloadHint(it, prev) : suggestCtx(w, i, it, prev), best = ex.kind === 'wr' ? bestBefore(ex.id, w.start) : 0;
   const linked = i > 0 && w.items[i - 1].ss;   // продолжение суперсета
@@ -546,7 +567,7 @@ function itemCard(w, it, i) {
   return `<section class="card ${it.ss ? 'ss-top' : ''} ${linked ? 'ss-bottom' : ''}">
     ${it.ss && !linked ? `<div class="ss-tag">Суперсет — упражнения подряд, отдых после последнего</div>` : ''}
     <div class="ex-head">${thumb(ex.id, true)}<a href="#/exercise/${ex.id}">${esc(ex.name)}</a><button class="ic sm" data-a="itMenu" ${d}>⋮</button></div>
-    <div class="muted small">${prev.length ? 'Прошлый раз: ' + prev.map(s => setTxt(s, ex.kind)).join(' · ') : 'Раньше не выполнялось'}</div>
+    <div class="muted small">${prev.length ? `${prev.sameDay ? 'Этот день программы' : 'Прошлый раз'}, ${fmtDate(prev.from.start).replace(/^\S+ /, '')}: ` + prev.map(s => (s.t === 'w' ? 'Р ' : '') + setTxt(s, ex.kind)).join(' · ') : 'Раньше не выполнялось'}</div>
     ${sg ? `<div class="hint">${sg.text}</div>` : ''}
     ${fillBtns(w, it, i, d)}
     ${wu.length ? `<button class="hint wu" data-a="warmAdd" ${d}>🔥 Разминка: ${wu.map(x => `${n(x.w)}×${x.r}`).join(' · ')} <b>— добавить</b></button>` : ''}
@@ -558,8 +579,8 @@ function itemCard(w, it, i) {
       const up = sg && !warm && p.t !== 'w';
       // если упражнение раньше не делали — подсказываем вес из предыдущего подхода этой же тренировки
       const earlier = it.sets.slice(0, j).reverse().find(x => x.w != null && x.t !== 'w') || {};
-      const pw = up && sg.dw && p.w != null ? p.w + sg.dw : p.w ?? earlier.w;
-      const pr = up && sg.dr && p.r != null ? p.r + sg.dr : (up && sg.dw && it.planR) || p.r;
+      const pw = warm ? warmWeight(ex, workW) ?? p.w : up && sg.dw && p.w != null ? p.w + sg.dw : p.w ?? earlier.w;
+      const pr = warm ? (pj && pj.r) || 10 : up && sg.dr && p.r != null ? p.r + sg.dr : (up && sg.dw && it.planR) || p.r;
       if (nextW == null && !s.done) nextW = s.w ?? pw ?? null;   // вес ближайшего подхода — для калькулятора блинов
       // поле с кнопками − и +: вес и повторы меняются без клавиатуры
       const field = (f, val, ph) => `<div class="stp"><button data-a="stepVal" data-f="${f}" data-v="-1" ${d} data-s="${j}" aria-label="Меньше">−</button>
@@ -1127,6 +1148,7 @@ function pgMore() {
     ${canVibrate() ? `<label class="switch"><span>Вибрация</span><input type="checkbox" data-in="setting" data-k="vibro" ${s.vibro ? 'checked' : ''}></label>` : ''}
     <label class="switch"><span>Прибавка: грудь, спина, ноги</span><select data-in="setting" data-k="stepBig">${[2.5, 5, 10].map(v => opt(v, n(v) + ' кг', s.stepBig || 5)).join('')}</select></label>
     <label class="switch"><span>Прибавка: руки, плечи, пресс</span><select data-in="setting" data-k="stepSmall">${[1, 1.25, 2.5, 5].map(v => opt(v, n(v) + ' кг', s.stepSmall || 2.5)).join('')}</select></label>
+    <label class="switch"><span>Подходы при старте</span><select data-in="setting" data-k="setPlan">${opt('warm4', '1 разминочный + 4 рабочих', s.setPlan || 'warm4')}${opt('program', 'Как в программе', s.setPlan || 'warm4')}</select></label>
     <label class="switch"><span>Предлагать разминочные подходы</span><input type="checkbox" data-in="setting" data-k="warmup" ${s.warmup !== false ? 'checked' : ''}></label>
     <label class="switch"><span>Не гасить экран во время тренировки</span><input type="checkbox" data-in="setting" data-k="keepOn" ${s.keepOn !== false ? 'checked' : ''}></label>
     <label class="switch"><span>Тема</span><select data-in="setting" data-k="theme">
@@ -1954,7 +1976,7 @@ const actions = {
     const p = P(d.p), day = p.days[d.d];
     // в лёгкую неделю подходов вдвое меньше
     const light = deloadOn();
-    newWorkout(day.name, day.items.map(pi => ({ exId: pi.exId, rest: pi.rest || null, planR: pi.reps, ss: !!pi.ss, note: '', sets: emptySets(light ? Math.max(1, Math.ceil(pi.sets / 2)) : pi.sets) })), { pid: p.id, di: +d.d, ...(light ? { deload: true } : {}) });
+    newWorkout(day.name, day.items.map(pi => ({ exId: pi.exId, rest: pi.rest || null, planR: pi.reps, ss: !!pi.ss, note: '', sets: light ? emptySets(Math.max(1, Math.ceil(pi.sets / 2))) : planSets(pi.exId, pi.sets) })), { pid: p.id, di: +d.d, ...(light ? { deload: true } : {}) });
   },
   async wRename(d) {
     const w = W(d.w), r = await form('Название тренировки', [{ name: 'name', label: 'Название', value: w.name }]);
@@ -1990,7 +2012,7 @@ const actions = {
     const id = await pickExercise();
     if (!id) return;
     const prev = prevSets(id, d.w, Infinity);
-    W(d.w).items.push({ exId: id, rest: null, note: '', sets: emptySets(Math.max(1, Math.min(prev.length, 6))) });
+    W(d.w).items.push({ exId: id, rest: null, note: '', sets: planSets(id, Math.max(1, Math.min(prev.filter(s => s.t !== 'w').length, 6))) });
     save(); render();
   },
   async wFinish(d) {
@@ -2025,7 +2047,7 @@ const actions = {
   },
   wRepeat(d) {
     const w = W(d.w);
-    newWorkout(w.name, w.items.map(it => ({ exId: it.exId, rest: it.rest || null, planR: it.planR, ss: !!it.ss, note: '', sets: emptySets(it.sets.length || 1) })),
+    newWorkout(w.name, w.items.map(it => ({ exId: it.exId, rest: it.rest || null, planR: it.planR, ss: !!it.ss, note: '', sets: planSets(it.exId, it.sets.filter(s => s.t !== 'w').length || 1) })),
       w.pid && P(w.pid) ? { pid: w.pid, di: w.di } : {});
   },
   async itMenu(d) {
@@ -2107,7 +2129,7 @@ const actions = {
     if (sh) sh.innerHTML = orderHtml(w);
   },
   warmAdd(d) {
-    const w = W(d.w), it = w.items[d.x], ex = exById(it.exId), prev = prevSets(it.exId, w.id, w.start).filter(x => x.t !== 'w');
+    const w = W(d.w), it = w.items[d.x], ex = exById(it.exId), prev = prevSets(it.exId, w.id, w.start, w).filter(x => x.t !== 'w');
     const sg = suggest(it, prev), work = (it.sets.find(x => x.t !== 'w' && x.w) || {}).w || Math.max(0, ...prev.map(x => x.w || 0)) + (sg && sg.dw || 0);
     const plan = warmupPlan(ex, work);
     if (!plan.length) return;
@@ -2127,7 +2149,7 @@ const actions = {
       if (!w.end) { tonLiveCheck(w, it, s, tonBefore); specialLiveCheck(w, it, s); }
       // в суперсете сразу идём к следующему упражнению, перед дроп-сетом тоже не отдыхаем
       const next = it.sets[+d.s + 1], noRest = it.ss || (next && next.t === 'd');
-      if (!w.end && !noRest) startRest(it.rest || db.settings.rest);
+      if (!w.end && !noRest) startRest(s.t === 'w' ? Math.min(60, it.rest || db.settings.rest) : it.rest || db.settings.rest);
     }
     save(); render();
   },

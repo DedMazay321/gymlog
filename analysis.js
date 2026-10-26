@@ -43,7 +43,7 @@ function workoutReport(w) {
   w.items.forEach((it, ii) => {
     const ex = exById(it.exId), work = it.sets.filter(isWork);
     if (ex.kind !== 'wr' || !work.length || rows.some(r => r.ex.id === ex.id)) return;
-    const before = prevSets(ex.id, w.id, w.start).filter(s => s.t !== 'w');
+    const before = prevSets(ex.id, w.id, w.start, w).filter(s => s.t !== 'w');
     const top = topSet(work), rm = rm1(top), vol = work.reduce((a, s) => a + (s.w || 0) * (s.r || 0), 0);
     const pTop = before.length ? topSet(before) : null, pRm = pTop ? rm1(pTop) : 0;
     const pVol = before.reduce((a, s) => a + (s.w || 0) * (s.r || 0), 0);

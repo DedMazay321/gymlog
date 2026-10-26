@@ -56,7 +56,7 @@ const plateRefresh = () => { const sh = modal.querySelector('.sheet'); if (sh) s
 /* ---------- «Как в прошлый раз» ---------- */
 // Прошлые подходы упражнения (с разминкой) и подсказка прибавки для рабочих.
 function lastPlan(w, i) {
-  const it = w.items[i], prev = prevSets(it.exId, w.id, w.start);
+  const it = w.items[i], prev = prevSets(it.exId, w.id, w.start, w);
   if (!prev.length) return null;
   const sg = w.deload ? deloadHint(it, prev) : suggestCtx(w, i, it, prev);
   return { prev, sg, up: sg && (sg.dw > 0 || sg.dr > 0) };
