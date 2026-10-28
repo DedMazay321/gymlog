@@ -1161,7 +1161,7 @@ function pgMore() {
     <label class="switch"><span>Напоминать в дни тренировок</span><input type="checkbox" data-in="setting" data-k="remOn" ${c.on ? 'checked' : ''}></label>
     <label class="switch"><span>Во сколько тренировка</span><input type="time" class="inp" style="width:auto" data-in="setting" data-k="trainTime" value="${c.time}"></label>
     <label class="switch"><span>Когда напомнить</span><select data-in="setting" data-k="remLead">${REMIND_LEADS.map(([v, l]) => opt(v, l, c.lead)).join('')}</select></label>
-    <label class="switch"><span>Стиль</span><select data-in="setting" data-k="remStyle">${opt('fun', 'С подколами', c.style)}${opt('calm', 'Спокойный', c.style)}</select></label>
+    <label class="switch"><span>Стиль</span><select data-in="setting" data-k="remStyle">${opt('fun', 'С подколами', c.style)}${opt('mat', 'Жёсткий, с матом 18+', c.style)}${opt('calm', 'Спокойный', c.style)}</select></label>
     <div class="notif" id="remDemo"><div class="muted small">Пример уведомления</div><b>${esc(remindTitle(p && p.days[0] ? p.days[0].name : 'Верх тела'))}</b><div class="small" id="remText">${esc(remindText(remDemo, p && p.days[0] ? p.days[0].name : 'Верх тела'))}</div></div>
     <div class="row two" style="margin-top:10px"><button class="btn" data-a="remNext">Другой пример</button>
       ${native ? `<button class="btn" data-a="remTest">Прислать сейчас</button>` : ''}</div>
@@ -1493,7 +1493,8 @@ function remindCfg() {
 function remindText(n, dayName) {
   const c = remindCfg(), when = (REMIND_LEADS.find(l => l[0] === c.lead) || REMIND_LEADS[3])[2];
   if (c.style === 'calm') return `Сегодня тренировка ${when}: ${dayName.replace(/^День \d+ · /, '')}.`;
-  return REMIND_JOKES[((n % REMIND_JOKES.length) + REMIND_JOKES.length) % REMIND_JOKES.length].replace('{when}', when);
+  const list = c.style === 'mat' ? REMIND_JOKES_MAT : REMIND_JOKES;
+  return list[((n % list.length) + list.length) % list.length].replace('{when}', when);
 }
 const remindTitle = dayName => 'Сегодня: ' + dayName.replace(/^День \d+ · /, '');
 function syncReminders() {
@@ -1593,7 +1594,8 @@ const suppIcon = r => r.supp === 'other' ? '💊' : (SUPPS.find(s => s.id === r.
 const suppTitle = r => `${suppIcon(r)} ${suppName(r)}${r.dose ? ' · ' + r.dose : ''}`;
 // n выбирает вариант текста: у каждого дня свой, чтобы шутка не повторялась два дня подряд
 function suppText(r, n) {
-  const own = SUPP_JOKES[r.supp], list = own || SUPP_JOKES_ANY;
+  // стиль «с матом» действует и на напоминания о добавках
+  const mat = db.settings.remStyle === 'mat', own = mat ? SUPP_JOKES_MAT[r.supp] : SUPP_JOKES[r.supp], list = own || (mat ? SUPP_JOKES_MAT_ANY : SUPP_JOKES_ANY);
   return list[((n % list.length) + list.length) % list.length].replace('{name}', suppName(r));
 }
 const daysLabel = days => days.length === 7 ? 'каждый день' : days.length ? [...days].sort().map(d => WD[d].toLowerCase()).join(', ') : 'дни не выбраны';
@@ -1613,7 +1615,7 @@ function suppSchedule() {
 }
 let suppEd = null;      // напоминание, которое сейчас редактируется в шторке
 function suppSheetHtml() {
-  const r = suppEd, own = SUPP_JOKES[r.supp] || SUPP_JOKES_ANY, native = window.Android && Android.setReminders;
+  const r = suppEd, own = (db.settings.remStyle === 'mat' ? SUPP_JOKES_MAT[r.supp] || SUPP_JOKES_MAT_ANY : SUPP_JOKES[r.supp] || SUPP_JOKES_ANY), native = window.Android && Android.setReminders;
   return `<h3>${r.isNew ? 'Новое напоминание' : 'Напоминание о приёме'}</h3>
     <label class="field"><span>Что принимать</span><select data-in="suppF" data-k="supp">${[...SUPPS.map(s => [s.id, s.icon + ' ' + s.name]), ['other', '💊 Другое — своё название']]
       .map(([v, l]) => `<option value="${v}" ${r.supp === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
