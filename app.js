@@ -1507,7 +1507,7 @@ function syncReminders() {
       if (di == null || !p.days[di] || at <= Date.now()) continue;
       if (k === 0 && db.workouts.some(w => w.pid === p.id && sameDay(w.start, Date.now()))) continue;
       // номер дня от начала эпохи: шутки идут по кругу и не повторяются в соседние дни
-      list.push({ at, title: remindTitle(p.days[di].name), text: remindText(Math.floor(start / DAY) * 7 % REMIND_JOKES.length, p.days[di].name) });
+      list.push({ at, title: remindTitle(p.days[di].name), text: remindText(Math.floor(start / DAY) * 7, p.days[di].name) });
     }
   }
   // ближайшие по времени — первыми: если мест в очереди не хватит, отсекутся самые дальние
