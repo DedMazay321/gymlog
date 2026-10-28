@@ -559,7 +559,7 @@ function itemCard(w, it, i) {
   const prevWork = prev.filter(x => x.t !== 'w'), prevWarm = prev.filter(x => x.t === 'w');
   const match = j => { const warm = it.sets[j].t === 'w'; return (warm ? prevWarm : prevWork)[it.sets.slice(0, j).filter(x => (x.t === 'w') === warm).length]; };
   // разминку предлагаем перед первым упражнением на группу мышц, пока не начаты подходы
-  const workW = (it.sets.find(x => x.t !== 'w' && x.w) || {}).w || (prevWork.length ? Math.max(...prevWork.map(x => x.w || 0)) + (sg && sg.dw || 0) : 0);
+  const workW = (it.sets.find(x => x.t !== 'w' && x.w) || {}).w || it.planW || (prevWork.length ? Math.max(...prevWork.map(x => x.w || 0)) + (sg && sg.dw || 0) : 0);
   const wu = !w.end && db.settings.warmup !== false && !it.sets.some(x => x.t === 'w' || x.done) && !w.items.slice(0, i).some(x => exById(x.exId).muscle === ex.muscle) ? warmupPlan(ex, workW) : [];
   // оценку «как дался подход» спрашиваем только у последнего выполненного, чтобы карточка не разрасталась
   const lastDone = it.sets.reduce((a, s, j) => s.done ? j : a, -1);
@@ -579,7 +579,7 @@ function itemCard(w, it, i) {
       const up = sg && !warm && p.t !== 'w';
       // если упражнение раньше не делали — подсказываем вес из предыдущего подхода этой же тренировки
       const earlier = it.sets.slice(0, j).reverse().find(x => x.w != null && x.t !== 'w') || {};
-      const pw = warm ? warmWeight(ex, workW) ?? p.w : up && sg.dw && p.w != null ? p.w + sg.dw : p.w ?? earlier.w;
+      const pw = warm ? warmWeight(ex, workW) ?? p.w : it.planW && !w.end ? it.planW : up && sg.dw && p.w != null ? p.w + sg.dw : p.w ?? earlier.w;
       const pr = warm ? (pj && pj.r) || 10 : up && sg.dr && p.r != null ? p.r + sg.dr : (up && sg.dw && it.planR) || p.r;
       if (nextW == null && !s.done) nextW = s.w ?? pw ?? null;   // вес ближайшего подхода — для калькулятора блинов
       // поле с кнопками − и +: вес и повторы меняются без клавиатуры
@@ -679,7 +679,7 @@ function dayStats(d) {
 function itemPlan(it) {
   const ex = exById(it.exId), k = KINDS[ex.kind] || KINDS.wr;
   if (ex.kind === 'cardio') return `${it.reps} мин`;
-  return `${it.sets} × ${it.reps}${ex.kind === 'time' ? ' ' + k.b : ''}`;
+  return `${it.sets} × ${it.reps}${ex.kind === 'time' ? ' ' + k.b : ''}${ex.kind === 'wr' && it.w ? ' · ' + n(it.w) + ' кг' : ''}`;
 }
 function pgProgram(id, day) {
   const p = P(id);
@@ -1978,7 +1978,7 @@ const actions = {
     const p = P(d.p), day = p.days[d.d];
     // в лёгкую неделю подходов вдвое меньше
     const light = deloadOn();
-    newWorkout(day.name, day.items.map(pi => ({ exId: pi.exId, rest: pi.rest || null, planR: pi.reps, ss: !!pi.ss, note: '', sets: light ? emptySets(Math.max(1, Math.ceil(pi.sets / 2))) : planSets(pi.exId, pi.sets) })), { pid: p.id, di: +d.d, ...(light ? { deload: true } : {}) });
+    newWorkout(day.name, day.items.map(pi => ({ exId: pi.exId, rest: pi.rest || null, planR: pi.reps, planW: (!light && p.auto !== false && pi.w) || null, planWhy: pi.why || '', ss: !!pi.ss, note: '', sets: light ? emptySets(Math.max(1, Math.ceil(pi.sets / 2))) : planSets(pi.exId, pi.sets) })), { pid: p.id, di: +d.d, ...(light ? { deload: true } : {}) });
   },
   async wRename(d) {
     const w = W(d.w), r = await form('Название тренировки', [{ name: 'name', label: 'Название', value: w.name }]);
@@ -2132,7 +2132,7 @@ const actions = {
   },
   warmAdd(d) {
     const w = W(d.w), it = w.items[d.x], ex = exById(it.exId), prev = prevSets(it.exId, w.id, w.start, w).filter(x => x.t !== 'w');
-    const sg = suggest(it, prev), work = (it.sets.find(x => x.t !== 'w' && x.w) || {}).w || Math.max(0, ...prev.map(x => x.w || 0)) + (sg && sg.dw || 0);
+    const sg = suggest(it, prev), work = (it.sets.find(x => x.t !== 'w' && x.w) || {}).w || it.planW || Math.max(0, ...prev.map(x => x.w || 0)) + (sg && sg.dw || 0);
     const plan = warmupPlan(ex, work);
     if (!plan.length) return;
     it.sets.unshift(...plan.map(x => ({ w: x.w, r: x.r, done: false, t: 'w' })));
@@ -2272,6 +2272,7 @@ const actions = {
       { name: 'sets', label: 'Подходов', type: 'number', value: it.sets },
       { name: 'reps', label: (KINDS[ex.kind] || KINDS.wr).b + ' в подходе', type: 'number', value: it.reps },
       { name: 'rest', label: 'Отдых, сек (пусто — как в настройках)', type: 'number', value: it.rest || '' },
+      ...(ex.kind === 'wr' ? [{ name: 'w', label: 'Рабочий вес, кг (пусто — по истории; при автоприбавке меняется сам)', type: 'number', value: it.w ?? '' }] : []),
       { name: 'ss', label: 'Суперсет со следующим упражнением', type: 'select', value: it.ss ? 'yes' : 'no', options: [['no', 'Нет'], ['yes', 'Да — без отдыха между ними']] },
     ], `<button type="button" class="btn sm" data-a="sheetRes" data-v="swap">Заменить</button>
         <button type="button" class="btn sm" data-a="sheetRes" data-v="up">↑</button>
@@ -2290,6 +2291,7 @@ const actions = {
       it.reps = num(r.reps) || it.reps;
       it.rest = num(r.rest);
       it.ss = r.ss === 'yes';
+      if ('w' in r) { const nw = num(r.w); if (nw !== (it.w ?? null)) { it.w = nw; it.why = nw ? 'вес задан вручную' : ''; it.fails = 0; } }
     }
     save(); render();
   },
