@@ -1,7 +1,7 @@
 {
- "version": 44,
- "name": "1.43",
- "notes": "Стиль «с матом»: 145 текстов для тренировок и 50 для добавок, все варианты идут по кругу без повторов",
+ "version": 45,
+ "name": "1.44",
+ "notes": "Стиль «с матом»: разные начала уведомлений, большинство — без «тренировка через час»",
  "files": {
   "advice.js": "4b9a3e53da55c75bc98db96066a0ce24ae33c32fbd11685e54fbd09d9887f397",
   "analysis.js": "8b0b4eface588025d56ecc66d3f86782644fe08d4f21fe95f6c289d763d84cfd",
@@ -676,7 +676,7 @@
   "log.js": "99722c5abcee8d3b28f6f4a8e6962815caf8adb57bc5cb68261ebbbc13527f2f",
   "logview.js": "5cae705e6015d16794b13369ace934933f7a46234d75b833d9bb3a864a25a7d0",
   "manifest.json": "94842a0eaf89b834d9943206744fba3df196f42d84693cd9b17c2d14095c52e0",
-  "mat.js": "cb4790c2085eb6f2f04e851b9fc0b6c726c92086f1de20ba2d313cd95192a1bb",
+  "mat.js": "75f09ab95928705824bb2a0e3d538482345eb7a9b6c1aaaae25327763b155a9d",
   "photoan.js": "e0ca4fd805b66d58bbd929f6abd9e0c1bd6fd5d961856ca9343660e358d96eb2",
   "progpro.js": "a5a9f2cbb2a3eb41c41ba2d891851e3226b7eaaa835fdc9f477007d66ae7780d",
   "programs.js": "135147c777e49e2b234772bdaf739acf9c3792645b08472879bba093cba1373a",
