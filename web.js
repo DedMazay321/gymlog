@@ -4,6 +4,26 @@ const IS_IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platfo
 const IS_STANDALONE = navigator.standalone === true || (window.matchMedia && matchMedia('(display-mode: standalone)').matches);
 const IS_WEB = !window.Android && !IS_PC;
 
+// На iOS видимая область меняется при появлении/скрытии панелей Safari и клавиатуры.
+// Учитываем её нижнюю границу для закреплённых снизу элементов, не затрагивая ПК и Android.
+if (IS_IOS && IS_WEB && window.visualViewport) {
+  const viewport = window.visualViewport;
+  let queued = false;
+  const updateViewportBottom = () => {
+    if (queued) return;
+    queued = true;
+    requestAnimationFrame(() => {
+      queued = false;
+      const inset = Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop);
+      document.documentElement.style.setProperty('--ios-viewport-bottom', `${Math.round(inset)}px`);
+    });
+  };
+  viewport.addEventListener('resize', updateViewportBottom);
+  viewport.addEventListener('scroll', updateViewportBottom);
+  window.addEventListener('resize', updateViewportBottom);
+  updateViewportBottom();
+}
+
 function webCards() {
   if (!IS_WEB) return '';
   const s = db.settings, out = [];

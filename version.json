@@ -1,7 +1,7 @@
 {
- "version": 48,
- "name": "1.47",
- "notes": "Защита данных, восстановление после сбоя обновления и исправление автоприбавки",
+ "version": 49,
+ "name": "1.48",
+ "notes": "Исправлено положение нижнего меню при прокрутке на iPhone",
  "files": {
   "advice.js": "4b9a3e53da55c75bc98db96066a0ce24ae33c32fbd11685e54fbd09d9887f397",
   "analysis.js": "8b0b4eface588025d56ecc66d3f86782644fe08d4f21fe95f6c289d763d84cfd",
@@ -683,12 +683,12 @@
   "progshare.js": "f336e91d0814a4d66f4e1f57eb017dd42e16a6b374a53c1325e9fcf869978f40",
   "special.js": "39e33f74eb30f6888dcb65961860b6a45fe962ce67e034824a928c38dd970504",
   "stretch.js": "ef1fa9057c00f5dcc3c0dcd116e20c0435c796ce7357a5bf5b84450a03169e36",
-  "styles.css": "228991bfddbbeba93c22f9fb0d5c5e34709a8948d4b126806ac5f4f90f9e2fb9",
+  "styles.css": "e0f948257af9a2bb669205a403c5121fe35ba7f67eade9c8dba72b99b0eabbf1",
   "sw.js": "215da093a3a04766a746d72b57472e1be071f23956dee2f73090e0bc51ea4c24",
   "sync.js": "07c5a5e83eac296db8e4680815128fe33d64c6fe54351a3cee731b4f820f49ff",
   "tech.js": "04f0a36a7e1193fe6b9c56cbeae4e104619d2c667c0d153530240876a60d75de",
   "tonnage.js": "c1d506dccfc8101660b5d5ae65d5ef9b586b17580cf1e92b30168e03e90e0cbd",
-  "web.js": "ba42901bc83d766074ef7e7b3db935bfbe5ec20026928bced4a48008233d1f1e",
+  "web.js": "51a2494a6332b2d786e15619fb20513a9431e0832bb3f726092f3bed5985429e",
   "women.js": "5e07a797a6e5b46ecd4a8d026c198413a0f3d6af7cd718cd1ab59a1bb10ffae8"
  }
 }
