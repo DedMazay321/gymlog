@@ -10,7 +10,7 @@ function autoProgress(w) {
   const p = P(w.pid), day = p && w.di != null && p.days[w.di];
   if (!day || !autoOn(p) || w.deload) return [];
   const out = [];
-  day.items.forEach(pi => {
+  day.items.forEach((pi, index) => {
     const ex = exById(pi.exId);
     if (ex.kind !== 'wr') return;
     const work = w.items.filter(it => it.exId === pi.exId).flatMap(it => it.sets.filter(isWork));
@@ -19,11 +19,22 @@ function autoProgress(w) {
     const atTop = work.filter(s => (s.w || 0) === top), target = pi.reps || 0;
     const ok = atTop.every(s => (s.r || 0) >= target) && work.every(s => (s.r || 0) >= target || (s.w || 0) < top);
     const hard = work.some(s => s.f === 3), easy = work.every(s => s.f === 1);
-    const st = progStep(ex), from = pi.w || null, base = Math.max(top, 0);
+    const before = { w: pi.w ?? null, reps: pi.reps, why: pi.why || '', fails: pi.fails || 0, wAt: pi.wAt || null };
+    const st = progStep(ex), from = pi.w || null, base = Math.max(top, 0), step = pi.autoStep > 0 ? pi.autoStep : st.step;
+    const range = pi.autoMin > 0 && pi.autoMax >= pi.autoMin, sameWeight = work.every(s => (s.w || 0) === top);
     let to = base, why;
-    if (ok && !hard) {
-      to = base + (easy ? st.step + st.extra : st.step);
-      why = `план ${target} повт. выполнен${easy ? ' легко' : ''} — +${n(to - base)} кг`;
+    if (ok && !hard && range && !sameWeight) {
+      why = 'Подходы с разными весами: автоприбавка приостановлена, проверьте план';
+      pi.fails = 0;
+    } else if (ok && !hard && range && target < pi.autoMax) {
+      pi.reps = Math.min(pi.autoMax, Math.max(pi.autoMin, target + 1));
+      why = `план выполнен — следующая цель ${pi.reps} повт. при том же весе`;
+      pi.fails = 0;
+    } else if (ok && !hard) {
+      const available = Array.isArray(pi.autoWeights) ? pi.autoWeights.filter(x => Number.isFinite(x) && x > base).sort((a, b) => a - b) : [];
+      to = pi.autoWeights && pi.autoWeights.length ? (available[0] || base) : base + (pi.autoStep > 0 ? step : (easy ? step + st.extra : step));
+      if (range && to > base) pi.reps = pi.autoMin;
+      why = to > base ? `план ${target} повт. выполнен${easy ? ' легко' : ''} — +${n(to - base)} кг${range ? ', цель ' + pi.reps + ' повт.' : ''}` : 'Следующего веса нет в списке доступного оборудования — вес сохранён';
       pi.fails = 0;
     } else if (ok) {
       why = 'план выполнен, но было тяжело — закрепляем вес';
@@ -37,7 +48,7 @@ function autoProgress(w) {
       } else why = `не все подходы на ${target} повт. — вес остаётся (попытка ${pi.fails} из 3)`;
     }
     pi.w = to; pi.why = why; pi.wAt = w.start;
-    if (from !== to) out.push({ exId: pi.exId, from, to, why });
+    if (from !== to || before.reps !== pi.reps) out.push({ exId: pi.exId, index, from, to, why, before, after: { w: pi.w, reps: pi.reps, wAt: pi.wAt } });
   });
   if (out.length) w.autoProg = out;
   return out;
@@ -45,10 +56,23 @@ function autoProgress(w) {
 // Итог автоприбавки после тренировки — показывается тостом и в отчёте тренировки.
 const autoLine = c => `${exById(c.exId).name}: ${c.from ? n(c.from) + ' → ' : ''}${n(c.to)} кг`;
 const autoHtml = w => w.autoProg && w.autoProg.length ? `<section class="card"><b>📈 Программа обновлена</b>
-  <div class="muted small" style="margin:2px 0 6px">Веса на следующую тренировку этого дня</div>
-  ${w.autoProg.map(c => `<div class="small">${esc(autoLine(c))}<div class="muted small">${esc(c.why)}</div></div>`).join('')}</section>` : '';
+  <div class="muted small" style="margin:2px 0 6px">План на следующую тренировку этого дня</div>
+  ${w.autoProg.map(c => `<div class="small">${esc(autoLine(c))}<div class="muted small">${esc(c.why)}</div></div>`).join('')}
+  ${w.autoProg.some(c => c.before && c.after) ? `<button class="btn sm" data-a="autoUndo" data-w="${w.id}">Отменить изменения плана</button>` : ''}</section>` : '';
 
 {
+  actions.autoUndo = async function (d) {
+    const w = W(d.w), p = w && P(w.pid), day = p && p.days[w.di];
+    if (!day || !w.autoProg) return toast('Программа больше недоступна');
+    const changes = w.autoProg.filter(c => c.before && c.after), valid = changes.every(c => {
+      const pi = day.items[c.index];
+      return pi && pi.exId === c.exId && pi.w === c.after.w && pi.reps === c.after.reps && pi.wAt === c.after.wAt;
+    });
+    if (!changes.length || !valid) return toast('План уже изменён — отменить автоматически нельзя');
+    if (!await confirmDlg('Вернуть предыдущие веса и повторы в программе?', 'Вернуть')) return;
+    changes.forEach(c => Object.assign(day.items[c.index], c.before));
+    w.autoProg = []; save(); render(); toast('Изменения плана отменены');
+  };
   const report = workoutReportHtml;
   workoutReportHtml = w => autoHtml(w) + report(w);
   // подсказка на тренировке: вес из программы важнее «прошлый раз + шаг»

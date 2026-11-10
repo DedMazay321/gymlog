@@ -125,7 +125,7 @@ function bestBefore(exId, before) {
   let best = 0;
   for (const w of db.workouts) {
     if (w.start >= before) continue;
-    for (const it of w.items) if (it.exId === exId) for (const s of it.sets) if (isWork(s) && (s.w || 0) > best) best = s.w;
+    for (const it of w.items) if (it.exId === exId) for (const s of it.sets) if (isWork(s) && !s.noRecord && (s.w || 0) > best) best = s.w;
   }
   return best;
 }
@@ -348,7 +348,10 @@ function beep() {
     o.start(audio.currentTime + t); o.stop(audio.currentTime + t + .2);
   });
 }
-function saveRest() { rest ? localStorage.setItem(KEY + '.rest', JSON.stringify(rest)) : localStorage.removeItem(KEY + '.rest'); }
+function saveRest() {
+  rest ? localStorage.setItem(KEY + '.rest', JSON.stringify(rest)) : localStorage.removeItem(KEY + '.rest');
+  if (window.Android && Android.setRestAlarm) Android.setRestAlarm(rest && !rest.fired ? rest.end : 0, !!db.settings.sound, !!db.settings.vibro);
+}
 function startRest(sec) {
   if (!sec) return;
   rest = { end: Date.now() + sec * 1000, total: sec };
@@ -361,8 +364,9 @@ function drawRest() {
   const left = Math.ceil((rest.end - Date.now()) / 1000);
   if (left < -5) return stopRest();
   if (left <= 0 && !rest.fired) {
-    rest.fired = true; saveRest(); beep();
-    if (db.settings.vibro && navigator.vibrate) navigator.vibrate([300, 150, 300]);
+    const notified = !!(window.Android && Android.restAlarmFired && Android.restAlarmFired(rest.end));
+    rest.fired = true; saveRest();
+    if (!notified) { beep(); if (db.settings.vibro && navigator.vibrate) navigator.vibrate([300, 150, 300]); }
   }
   el.hidden = false;
   $('#rest-time').textContent = left > 0 ? 'Отдых ' + fmtDur(left * 1000) : 'Отдых окончен';
@@ -501,6 +505,27 @@ function weekStrip() {
 }
 // Первый запуск: вместо пустого экрана — подбор программы.
 const isNew = () => !db.settings.onboarded && !db.programs.length && !db.workouts.length;
+function weekOverview() {
+  const from = weekStart(Date.now()), to = Date.now() + 1;
+  const ws = finished().filter(w => w.start >= from && w.start < to);
+  const groups = Object.entries(groupSets(from, to)).filter(([, count]) => count > 0).sort((a, b) => b[1] - a[1]).slice(0, 4);
+  const progress = [];
+  ws.forEach(w => w.items.forEach(it => {
+    if (progress.some(x => x.id === it.exId) || exById(it.exId).kind !== 'wr') return;
+    const sets = it.sets.filter(s => isWork(s) && !s.noRecord && s.w > 0 && s.r > 0);
+    for (const set of sets) {
+      const old = finished().filter(x => x.start < from).flatMap(x => x.items.filter(i => i.exId === it.exId).flatMap(i => i.sets.filter(s => isWork(s) && !s.noRecord && s.r >= set.r)));
+      const best = Math.max(0, ...old.map(s => s.w || 0));
+      if (best && set.w > best) { progress.push({ id: it.exId, text: `${exById(it.exId).name}: ${n(set.w)} кг × ${n(set.r)} — больше, чем раньше при тех же повторах` }); break; }
+    }
+  }));
+  const next = nextPlan();
+  return `<section class="card"><b>Обзор недели</b>
+    <div class="small">Тренировок: ${ws.length} · рабочих подходов: ${ws.reduce((sum, w) => sum + wStats(w).sets, 0)}</div>
+    <div class="muted small">${groups.length ? 'Нагрузка: ' + groups.map(([name, count]) => `${esc(name)} — ${n(count)} подх.`).join(' · ') : 'Рабочих подходов пока нет'}</div>
+    ${progress.length ? `<div class="small">📈 ${esc(progress[0].text)}</div>` : ''}
+    ${next ? `<div class="muted small">${esc(next.when)}: ${esc(next.p.days[next.di].name)}</div>` : ''}</section>`;
+}
 function pgWorkouts() {
   if (isNew()) return pgPick(true);
   const act = activeW(), list = sortedW().filter(w => w.end), pl = nextPlan(), now = new Date();
@@ -522,6 +547,7 @@ function pgWorkouts() {
   <section class="card">${weekStrip()}
     <div class="muted small" style="margin-top:10px">${(() => { const c = list.filter(w => w.start >= weekStart(Date.now())).length, st = weekStreaks().cur;
       return `Тренировок на этой неделе: ${c}${st > 1 ? ` · серия ${st} нед. подряд 🔥` : ''}`; })()}</div></section>
+  ${weekOverview()}
   <div class="last">${list.length ? `<h2>Прошлая тренировка</h2>${workoutRow(list[0])}
     <a class="btn block ghost" href="#/history">Вся история</a>` : tip('home', 'Когда закончите первую тренировку, здесь появятся история, графики прогресса и достижения.')}</div>
   </div><div class="dash-r">
@@ -594,7 +620,7 @@ function itemCard(w, it, i) {
       const field = (f, val, ph) => `<div class="stp"><button data-a="stepVal" data-f="${f}" data-v="-1" ${d} data-s="${j}" aria-label="Меньше">−</button>
         <input type="text" inputmode="decimal" data-in="setVal" data-f="${f}" ${d} data-s="${j}" value="${val ?? ''}" placeholder="${ph ?? ''}">
         <button data-a="stepVal" data-f="${f}" data-v="1" ${d} data-s="${j}" aria-label="Больше">+</button></div>`;
-      const record = best && isWork(s) && s.w > best, rate = j === lastDone && !w.end && !warm;
+      const record = best && isWork(s) && !s.noRecord && s.w > best, rate = j === lastDone && !w.end && !warm;
       return `<div class="set-row ${s.done ? 'done' : ''}">
         <button class="num t-${s.t || 'n'}" data-a="setType" ${d} data-s="${j}" aria-label="Тип подхода">${s.t ? SET_TYPES[s.t][1] : ++num}</button>
         ${field('w', s.w, pw)}${field('r', s.r, pr ?? it.planR)}
@@ -604,7 +630,8 @@ function itemCard(w, it, i) {
           ${pj ? `${s.w || pj.w ? dl((s.w || 0) - (pj.w || 0), k.a) : ''} ${dl((s.r || 0) - (pj.r || 0), k.b)}` : ''}
           ${s.f && !rate ? `<span class="fdot f${s.f}">${FEEL[s.f][0]}</span>` : ''}</div>` : ''}
         ${rate ? `<div class="feel"><span class="muted">Как дался подход?</span>${[1, 2, 3].map(v =>
-          `<button class="${s.f === v ? 'on f' + v : ''}" data-a="setFeel" ${d} data-s="${j}" data-v="${v}">${FEEL[v][0]}</button>`).join('')}</div>` : ''}</div>`;
+          `<button class="${s.f === v ? 'on f' + v : ''}" data-a="setFeel" ${d} data-s="${j}" data-v="${v}">${FEEL[v][0]}</button>`).join('')}</div>` : ''}
+        ${w.end && isWork(s) ? `<div class="delta"><button class="btn sm ghost" data-a="recordToggle" ${d} data-s="${j}">${s.noRecord ? 'Вернуть в рекорды' : 'Исключить из истории рекордов'}</button></div>` : ''}</div>`;
     }).join('')}
     ${w.end ? '' : plateLine(ex, nextW, d)}
     ${(() => {
@@ -620,6 +647,18 @@ function itemCard(w, it, i) {
       ${it.sets.length ? `<button class="btn sm ghost" data-a="setDel" ${d}>− Подход</button>` : ''}</div>
   </section>`;
 }
+function nextSetCard(w) {
+  for (let i = 0; i < w.items.length; i++) {
+    const it = w.items[i], j = it.sets.findIndex(s => !s.done);
+    if (j < 0) continue;
+    const ex = exById(it.exId), prev = prevSets(it.exId, w.id, w.start, w).filter(s => s.t !== 'w');
+    return `<section class="card active"><div class="muted small">Следующий подход</div>
+      <b>${esc(ex.name)}</b><div class="small">${it.sets[j].t === 'w' ? 'Разминочный' : 'Подход ' + it.sets.slice(0, j + 1).filter(x => x.t !== 'w').length}${it.sets[j].w != null ? ' · ' + n(it.sets[j].w) + ' кг' : it.planW && it.sets[j].t !== 'w' ? ' · план: ' + n(it.planW) + ' кг' : ''}${it.sets[j].r != null ? ' × ' + n(it.sets[j].r) : it.sets[j].t === 'w' ? ' × 10' : it.planR ? ' × ' + n(it.planR) : ''}</div>
+      <div class="muted small">${prev.length ? 'В прошлый раз: ' + esc(prev.map(s => setTxt(s, ex.kind)).join(' · ')) : 'Прошлого результата пока нет'}</div>
+      <div class="row" style="margin-top:10px"><button class="btn primary grow" data-a="nextSetDone" data-w="${w.id}" data-x="${i}" data-s="${j}">✓ Выполнено</button><button class="btn" data-a="nextSetEdit" data-w="${w.id}" data-x="${i}" data-s="${j}">Изменить</button></div></section>`;
+  }
+  return '';
+}
 function pgWorkout(id) {
   const w = W(id);
   if (!w) return notFound();
@@ -629,7 +668,7 @@ function pgWorkout(id) {
   <div class="sub">${fmtDate(w.start)} · <span ${w.end ? '' : `data-elapsed="${w.start}"`}>${fmtDur((w.end || Date.now()) - w.start)}</span>
     · ${s.sets} подх.${s.ton ? ` · ${n(Math.round(s.ton))} кг` : ''}</div>
   ${w.note ? `<div class="note">${esc(w.note)}</div>` : ''}
-  ${w.end ? workoutReportHtml(w) + '<h2>Упражнения</h2>' : tonLiveHtml(w)}
+  ${w.end ? workoutReportHtml(w) + '<h2>Упражнения</h2>' : nextSetCard(w) + tonLiveHtml(w)}
   ${w.end ? '' : tip('workout', 'Кнопки − и + меняют вес и повторы без клавиатуры. Нажмите на номер подхода, чтобы отметить разминочный или дроп-сет. Нажмите на фото, чтобы посмотреть технику. В меню ⋮ — суперсет, заметка и время отдыха.')}
   ${w.items.map((it, i) => itemCard(w, it, i)).join('') || `<div class="empty">Добавьте первое упражнение</div>`}
   <button class="btn block" data-a="wAddEx" data-w="${w.id}">+ Добавить упражнение</button>
@@ -1007,6 +1046,25 @@ function sessions(exId) {
   }
   return out;
 }
+function recordHistory(exId) {
+  const ex = exById(exId);
+  if (ex.kind !== 'wr') return '';
+  const records = [], weights = new Map();
+  let bestWeight = 0, bestRm = 0;
+  sessions(exId).filter(p => p.w.end).forEach(p => p.sets.filter(s => !s.noRecord).forEach(set => {
+    const weight = +set.w || 0, reps = +set.r || 0;
+    if (!reps) return;
+    const labels = [];
+    if (weight > bestWeight) { bestWeight = weight; labels.push('вес'); }
+    const rm = weight && reps <= 12 ? weight * (1 + reps / 30) : 0;
+    if (rm > bestRm + 0.01) { bestRm = rm; labels.push('расчётный 1ПМ ≈ ' + n(+rm.toFixed(1)) + ' кг'); }
+    if (reps > (weights.get(weight) || 0)) { weights.set(weight, reps); labels.push('повторы с этим весом'); }
+    if (labels.length) records.push({ w: p.w, set, labels });
+  }));
+  if (!records.length) return '';
+  return `<h2>История рекордов</h2><section class="card"><div class="muted small">Расчётный 1ПМ — ориентир; показан для подходов до 12 повторов. Чтобы исключить ошибку из этой истории рекордов, откройте тренировку и нажмите «Исключить из истории рекордов». В общей статистике и достижениях подход сохранится.</div>
+    ${records.reverse().slice(0, 12).map(r => `<a class="li" href="#/workout/${r.w.id}"><span class="grow"><b>${esc(setTxt(r.set, ex.kind))}</b> · ${esc(r.labels.join(', '))}<br><span class="muted small">${esc(fmtDate(r.w.start))}</span></span><span>›</span></a>`).join('')}</section>`;
+}
 function pgExercise(id) {
   const ex = exById(id), k = KINDS[ex.kind] || KINDS.wr, wr = ex.kind === 'wr';
   const ser = sessions(id), last = ser[ser.length - 1], prev = ser[ser.length - 2], first = ser[0];
@@ -1022,6 +1080,7 @@ function pgExercise(id) {
     <button class="ic" data-a="exMenu" data-id="${ex.id}">⋮</button></header>
   <div class="sub">${esc([ex.muscle, ex.equip, k.name, exSexLabel(ex)].filter(Boolean).join(' · '))}</div>
   ${demo(ex.id)}
+  ${recordHistory(id)}
   ${muscleMap(ex) ? `<section class="card">${muscleMap(ex)}</section>` : ''}
   ${techHtml(ex) ? `<h2>Техника</h2><section class="card">${techHtml(ex)}</section>` : ''}
   ${(() => {
@@ -1152,6 +1211,7 @@ function pgMore() {
   <section class="card">
     <label class="switch"><span>Отдых между подходами</span><select data-in="setting" data-k="rest">
       ${[0, 30, 45, 60, 90, 120, 150, 180, 240, 300].map(v => opt(v, v ? fmtDur(v * 1000) : 'Выключен', s.rest)).join('')}</select></label>
+    ${window.Android && Android.restExactAvailable && !Android.restExactAvailable() ? `<button class="hint block" data-a="restPermission">Для точного сигнала при выключенном экране разрешите будильники и напоминания в настройках Android ›</button>` : ''}
     <label class="switch"><span>Звук по окончании отдыха</span><input type="checkbox" data-in="setting" data-k="sound" ${s.sound ? 'checked' : ''}></label>
     ${canVibrate() ? `<label class="switch"><span>Вибрация</span><input type="checkbox" data-in="setting" data-k="vibro" ${s.vibro ? 'checked' : ''}></label>` : ''}
     <label class="switch"><span>Прибавка: грудь, спина, ноги</span><select data-in="setting" data-k="stepBig">${[2.5, 5, 10].map(v => opt(v, n(v) + ' кг', s.stepBig || 5)).join('')}</select></label>
@@ -1946,6 +2006,7 @@ const actions = {
   sheetRes: d => closeSheet(d.v),
   restAdd: d => { if (rest) { rest.end += d.v * 1000; rest.total = Math.max(1, rest.total + +d.v); rest.fired = false; saveRest(); drawRest(); } },
   restStop: () => stopRest(),
+  restPermission: () => { if (window.Android && Android.restExactSettings) Android.restExactSettings(); },
   calNav: d => { cal.setMonth(cal.getMonth() + +d.v); render(); },
   // Что было в выбранный день: тренировки с подходами, а если их нет — что стоит в расписании.
   calDay(d) {
@@ -2092,12 +2153,21 @@ const actions = {
   async itSwap(d) {
     const w = W(d.w), i = +d.x, it = w.items[i], id = await pickAnalog(it.exId);
     if (!id) return;
+    const program = w.pid && P(w.pid), day = program && w.di != null && program.days[w.di];
+    const matches = day ? day.items.filter(pi => pi.exId === it.exId) : [];
+    if (matches.length === 1) {
+      const choice = await menu('Где заменить упражнение?', [['today', 'Только на этой тренировке'], ['program', 'Также в этом дне программы']]);
+      if (!choice) return;
+      if (choice === 'program') {
+        const pi = matches[0]; pi.exId = id; delete pi.w; delete pi.why; delete pi.fails; delete pi.wAt; delete pi.autoStep; delete pi.autoWeights; delete pi.autoMin; delete pi.autoMax;
+      }
+    }
     const done = it.sets.filter(s => s.done);
     // уже выполненные подходы остаются за старым упражнением, оставшиеся переходят к новому
     if (done.length) {
       w.items.splice(i + 1, 0, { exId: id, rest: it.rest || null, planR: it.planR, ss: it.ss, note: '', sets: emptySets(Math.max(1, it.sets.length - done.length)) });
       it.sets = done; it.ss = false;
-    } else { it.exId = id; it.sets = emptySets(it.sets.length); }
+    } else { it.exId = id; it.sets = emptySets(it.sets.length); delete it.planW; delete it.planWhy; }
     save(); render();
   },
   // кнопки − и + у поля: шаг зависит от упражнения, пустое поле стартует с подсказки
@@ -2147,6 +2217,20 @@ const actions = {
     if (!plan.length) return;
     it.sets.unshift(...plan.map(x => ({ w: x.w, r: x.r, done: false, t: 'w' })));
     save(); render();
+  },
+  recordToggle(d) {
+    const w = W(d.w), set = w && w.items[+d.x] && w.items[+d.x].sets[+d.s];
+    if (!w || !w.end || !set || !isWork(set)) return;
+    if (set.noRecord) delete set.noRecord; else set.noRecord = true;
+    save(); render(); toast(set.noRecord ? 'Подход исключён из истории рекордов' : 'Подход снова учитывается в рекордах');
+  },
+  nextSetEdit(d) {
+    const btn = document.querySelector(`.set-row .chk[data-w="${d.w}"][data-x="${d.x}"][data-s="${d.s}"]`);
+    if (btn) { btn.closest('.set-row').scrollIntoView({ behavior: 'smooth', block: 'center' }); const input = btn.closest('.set-row').querySelector('input'); if (input) input.focus(); }
+  },
+  nextSetDone(d) {
+    const btn = document.querySelector(`.set-row .chk[data-w="${d.w}"][data-x="${d.x}"][data-s="${d.s}"]`);
+    if (btn) actions.setToggle(d, btn);
   },
   setToggle(d, el) {
     const w = W(d.w), it = w.items[d.x], s = it.sets[d.s], tonBefore = wStats(w).ton;
@@ -2282,17 +2366,31 @@ const actions = {
       { name: 'sets', label: 'Подходов', type: 'number', value: it.sets },
       { name: 'reps', label: (KINDS[ex.kind] || KINDS.wr).b + ' в подходе', type: 'number', value: it.reps },
       { name: 'rest', label: 'Отдых, сек (пусто — как в настройках)', type: 'number', value: it.rest || '' },
-      ...(ex.kind === 'wr' ? [{ name: 'w', label: 'Рабочий вес, кг (пусто — по истории; при автоприбавке меняется сам)', type: 'number', value: it.w ?? '' }] : []),
+      ...(ex.kind === 'wr' ? [
+        { name: 'w', label: 'Рабочий вес, кг (пусто — по истории)', type: 'number', value: it.w ?? '' },
+        { name: 'autoStep', label: 'Шаг прибавки, кг (пусто — общий)', type: 'number', value: it.autoStep ?? '' },
+        { name: 'autoWeights', label: 'Доступные веса, кг через пробел (например 10 12 14; пусто — по шагу)', value: (it.autoWeights || []).join(' ') },
+        { name: 'autoMin', label: 'Диапазон повторов: минимум (пусто — обычная прогрессия)', type: 'number', value: it.autoMin ?? '' },
+        { name: 'autoMax', label: 'Диапазон повторов: максимум', type: 'number', value: it.autoMax ?? '' }
+      ] : []),
       { name: 'ss', label: 'Суперсет со следующим упражнением', type: 'select', value: it.ss ? 'yes' : 'no', options: [['no', 'Нет'], ['yes', 'Да — без отдыха между ними']] },
     ], `<button type="button" class="btn sm" data-a="sheetRes" data-v="swap">Заменить</button>
         <button type="button" class="btn sm" data-a="sheetRes" data-v="up">↑</button>
         <button type="button" class="btn sm" data-a="sheetRes" data-v="down">↓</button>
         <button type="button" class="btn sm danger" data-a="sheetRes" data-v="del">Убрать</button>`);
     if (!r) return;
+    if (typeof r === 'object' && 'autoStep' in r) {
+      const step = num(r.autoStep), min = num(r.autoMin), max = num(r.autoMax);
+      if (r.autoWeights && r.autoWeights.trim().split(/\s+/).some(v => !/^\d+(?:[.,]\d+)?$/.test(v) || +v.replace(',', '.') <= 0 || +v.replace(',', '.') > 2000)) { toast('Укажите доступные веса через пробел'); return; }
+      if ((r.autoStep && (!step || step <= 0 || step > 100)) || ((r.autoMin || r.autoMax) && (!Number.isInteger(min) || !Number.isInteger(max) || min < 1 || max < min || max > 100))) {
+        toast('Проверьте шаг и диапазон повторов: минимум и максимум от 1 до 100'); return;
+      }
+    }
     if (r === 'swap') {
       const id = await pickAnalog(it.exId);
       if (!id) return;
       it.exId = id;
+      delete it.w; delete it.why; delete it.wAt; delete it.fails; delete it.autoStep; delete it.autoWeights; delete it.autoMin; delete it.autoMax;
     } else if (r === 'up') move(items, i, -1);
     else if (r === 'down') move(items, i, 1);
     else if (r === 'del') items.splice(i, 1);
@@ -2302,6 +2400,16 @@ const actions = {
       it.rest = num(r.rest);
       it.ss = r.ss === 'yes';
       if ('w' in r) { const nw = num(r.w); if (nw !== (it.w ?? null)) { it.w = nw; it.why = nw ? 'вес задан вручную' : ''; it.fails = 0; } }
+      if ('autoStep' in r) {
+        const step = num(r.autoStep), min = num(r.autoMin), max = num(r.autoMax);
+        if ((r.autoStep && (!step || step <= 0 || step > 100)) || ((r.autoMin || r.autoMax) && (!Number.isInteger(min) || !Number.isInteger(max) || min < 1 || max < min || max > 100))) {
+          toast('Проверьте шаг и диапазон повторов: минимум и максимум от 1 до 100'); return;
+        }
+        if (step) it.autoStep = step; else delete it.autoStep;
+        if (r.autoWeights) it.autoWeights = [...new Set(r.autoWeights.trim().split(/\s+/).map(v => +v.replace(',', '.')))].sort((x, y) => x - y); else delete it.autoWeights;
+        if (min && max) { it.autoMin = min; it.autoMax = max; it.reps = Math.max(min, Math.min(max, it.reps)); }
+        else { delete it.autoMin; delete it.autoMax; }
+      }
     }
     save(); render();
   },
