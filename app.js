@@ -43,14 +43,22 @@ function fresh() {
 }
 function load() {
   try {
-    const d = JSON.parse(localStorage.getItem(KEY));
+    const raw = localStorage.getItem(KEY);
+    if (raw === null) return fresh();
+    const d = JSON.parse(raw);
+    if (!d || !d.version || !Array.isArray(d.exercises) || !Array.isArray(d.workouts) || !Array.isArray(d.programs) || !d.settings) throw new Error('Неверный формат данных');
     if (d && d.version) {
       // новые упражнения базового справочника добавляем в уже существующие данные
       const have = new Set(d.exercises.map(e => e.id));
       fresh().exercises.forEach(e => { if (!have.has(e.id)) d.exercises.push(e); });
       return d;
     }
-  } catch (e) { /* повреждённые данные — начинаем заново */ }
+  } catch (e) {
+    document.addEventListener('DOMContentLoaded', () => {
+      document.body.textContent = 'Не удалось прочитать сохранённые данные GymLog. Запись заблокирована, чтобы не перезаписать их. Не очищайте данные приложения; обратитесь к разработчику для восстановления.';
+    });
+    throw new Error('Чтение базы GymLog: ' + e.message);
+  }
   return fresh();
 }
 let db = load();
@@ -2027,7 +2035,9 @@ const actions = {
     }
     w.items.forEach(it => it.sets = it.sets.filter(s => s.done));
     w.items = w.items.filter(it => it.sets.length);
-    w.end = Date.now(); stopRest(); save();
+    w.end = Date.now();
+    if (typeof autoProgress === 'function' && !w.autoProgressApplied) { autoProgress(w); w.autoProgressApplied = true; }
+    stopRest(); save();
     render();
     const feel = await menu('Как прошла тренировка?', [[1, '😌 Легко — остался запас сил'], [2, '🙂 Нормально — в самый раз'], [3, '😤 Тяжело — на пределе']]);
     if (feel) w.feel = +feel;

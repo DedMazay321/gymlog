@@ -15,7 +15,7 @@ function autoProgress(w) {
     if (ex.kind !== 'wr') return;
     const work = w.items.filter(it => it.exId === pi.exId).flatMap(it => it.sets.filter(isWork));
     const top = Math.max(0, ...work.map(s => s.w || 0));
-    if (!work.length || !top) return;
+    if (!work.length || !top || work.length < (Number(pi.sets) || 1)) return;
     const atTop = work.filter(s => (s.w || 0) === top), target = pi.reps || 0;
     const ok = atTop.every(s => (s.r || 0) >= target) && work.every(s => (s.r || 0) >= target || (s.w || 0) < top);
     const hard = work.some(s => s.f === 3), easy = work.every(s => s.f === 1);
@@ -49,17 +49,6 @@ const autoHtml = w => w.autoProg && w.autoProg.length ? `<section class="card"><
   ${w.autoProg.map(c => `<div class="small">${esc(autoLine(c))}<div class="muted small">${esc(c.why)}</div></div>`).join('')}</section>` : '';
 
 {
-  const fin = actions.wFinish;
-  actions.wFinish = async function (d) {
-    const w = W(d.w);
-    // считаем до завершения: если подходов нет, тренировка будет удалена и считать нечего
-    const changes = w && w.pid && !w.end && wStats(w).sets ? autoProgress(w) : [];
-    await fin.call(this, d);
-    if (changes.length && W(d.w)) {
-      save();
-      setTimeout(() => toast('📈 Программа: ' + changes.slice(0, 2).map(autoLine).join(', ') + (changes.length > 2 ? ` и ещё ${changes.length - 2}` : '')), 1500);
-    }
-  };
   const report = workoutReportHtml;
   workoutReportHtml = w => autoHtml(w) + report(w);
   // подсказка на тренировке: вес из программы важнее «прошлый раз + шаг»
